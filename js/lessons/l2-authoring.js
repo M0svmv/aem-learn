@@ -3,6 +3,14 @@
 const EDIT_ABOUT = '/editor.html' + ABOUT + '.html';
 const editMode = () => { if (S.ui.editor.mode && S.ui.editor.mode !== 'edit') { S.ui.editor.mode = 'edit'; commit(); } };
 const openEditor = (ar, en) => step(null, ar, en, { at: EDIT_ABOUT, go: EDIT_ABOUT, next: true, prep: editMode });
+// a datetime-local value one minute after about's latest version (Timewarp has minute precision)
+const twFill = () => {
+  const v = (S.versions[ABOUT] || []).slice(-1)[0];
+  const d = new Date(Math.ceil((v ? Date.parse(v.created) : Date.now()) / 60000) * 60000);
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+const gqlUrl = () => '/graphql/execute.json/wknd/' + ((S.ui.gql && S.ui.gql.name) || 'adventures-all');
 const modeMenu = step('.ed-bar details.right summary', 'دوس على قايمة الـ mode (مكتوب فيها Edit) جنب Preview.', 'Open the mode menu (it says Edit) next to Preview.', { at: '/editor.html', go: EDIT_ABOUT });
 
 lesson({
@@ -154,7 +162,7 @@ lesson({
 <h4>Timewarp</h4>
 <p>بيرجع بالزمن ويعرض الصفحة من الـ <b>versions</b> بتاعتها. لو مفيش version قبل التاريخ اللي اخترته مش هيعرض حاجة. (الـ versions بتتعمل مع كل Publish أو بـ Save as Version — درس 4.1.)</p>
 <h4>Targeting والـ audiences</h4>
-<p>الـ <b>segment</b> (audience) هو وصف لمجموعة زوار: "زوار الصيف"، "زوار من الرياض"… بتعمل Target على component وتكتب له نسخة لكل audience. على الموقع، <b>ContextHub</b> بيحدد الزائر ينتمي لأنهي segment ويعرض النسخة المناسبة. في الـ lab الـ segments موسمية (Summer/Winter حسب الشهر)، زي اللي جاية مع الـ archetype.</p>`, `
+<p>الـ <b>segment</b> (audience) هو وصف لمجموعة زوار: "زوار الصيف"، "زوار من بلد معيّن"… بتعمل Target على component وتكتب له نسخة لكل audience. على الموقع، <b>ContextHub</b> بيحدد الزائر ينتمي لأنهي segment ويعرض النسخة المناسبة. في الـ lab الـ segments موسمية (Summer/Winter حسب الشهر)، زي اللي جاية مع الـ archetype.</p>`, `
 <h4>The menu next to Preview</h4>
 <table class="ls-table">
 <tr><th>Mode</th><th>What it does</th><th>Stored where</th></tr>
@@ -174,7 +182,7 @@ lesson({
 <h4>Timewarp</h4>
 <p>Goes back in time using the page's <b>versions</b>. With no version before the chosen date it shows nothing. (Versions are created on publish or with Save as Version — lesson 4.1.)</p>
 <h4>Targeting and audiences</h4>
-<p>A <b>segment</b> (audience) describes a group of visitors: "summer visitors", "visitors from Riyadh"… You target a component and write a version per audience. On the site, <b>ContextHub</b> decides which segment a visitor is in and shows that version. In the lab the segments are seasonal (Summer/Winter by month), like the ones the archetype ships.</p>`),
+<p>A <b>segment</b> (audience) describes a group of visitors: "summer visitors", "visitors from one country"… You target a component and write a version per audience. On the site, <b>ContextHub</b> decides which segment a visitor is in and shows that version. In the lab the segments are seasonal (Summer/Winter by month), like the ones the archetype ships.</p>`),
   terms: [
     ['Breakpoint', L('عرض شاشة بيتغيّر عنده الـ layout (phone < 768، tablet < 1200).', 'A screen width where layout changes (phone < 768, tablet < 1200).')],
     ['cq:responsive', L('الـ node اللي بيخزن العرض والـ offset والـ hide لكل breakpoint.', 'Stores width, offset and hide per breakpoint.')],
@@ -206,8 +214,17 @@ lesson({
       step(`.ci[data-path="${ABOUT}"]`, 'في Sites دوس على <b>اسم</b> About (مش الصورة) عشان تفتحها.', 'In Sites click the <b>name</b> About (not the picture) to open it.', { at: '/sites.html/content/wknd/us/en', go: '/sites.html/content/wknd/us/en' }),
       step('summary[title="Toggle Side Panel"]', 'افتح قايمة <b>Content Only ▾</b> فوق على الشمال.', 'Open the <b>Content Only ▾</b> menu at the top left.', { at: '/sites.html' }),
       step('[data-act="railSet"][data-v="1"]', 'اختار <b>Timeline</b>.', 'Choose <b>Timeline</b>.', { at: '/sites.html' }),
-      step('[data-act="verCreate"]', 'دوس <b>Save as Version</b> وبعدين Create.', 'Press <b>Save as Version</b>, then Create.', { at: '/sites.html' }),
-      step(null, 'دلوقتي افتح about في الـ editor وغيّر أي نص، وبعدين من قايمة الـ mode اختار <b>Timewarp</b> وحط وقت قبل التعديل.', 'Now open about in the editor, change some text, then pick <b>Timewarp</b> in the mode menu and set a time before your change.', { at: '/editor.html', go: EDIT_ABOUT, next: true }),
+      step('[data-act="verCreate"]', 'دوس <b>Save as Version</b>.', 'Press <b>Save as Version</b>.', { at: '/sites.html' }),
+      step('.modal [data-modal=ok]', 'دوس <b>Create</b>: كده الصفحة اتحفظت زي ما هي دلوقتي.', 'Press <b>Create</b>: the page is saved as it is right now.', { at: '/sites.html' }),
+      openEditor('دلوقتي هنفتح about في الـ editor عشان نغيّر فيها حاجة.', 'Now we open about in the editor to change something.'),
+      step('frame:[data-cmp*="/title"]', 'دوس على الـ <b>Title</b> عشان تختاره.', 'Click the <b>Title</b> to select it.', { at: '/editor.html' }),
+      step('frame:#lab-tb [data-tb="cfg"]', 'دوس 🔧 <b>Configure</b>.', 'Press 🔧 <b>Configure</b>.', { at: '/editor.html' }),
+      step('.modal [name="./jcr:title"]', 'غيّر العنوان لأي حاجة جديدة.', 'Change the title to anything new.', { at: '/editor.html', next: true, fill: 'About WKND (changed)' }),
+      step('.modal [data-modal=ok]', 'دوس ✔ عشان تحفظ. الصفحة دلوقتي مختلفة عن الـ version.', 'Press ✔ to save. The page now differs from the version.', { at: '/editor.html' }),
+      modeMenu,
+      step('.ed-bar [data-act="edMode"][data-mode="timewarp"]', 'اختار <b>Timewarp</b>.', 'Choose <b>Timewarp</b>.', { at: '/editor.html' }),
+      step('.modal [name=tw]', 'حط وقت <b>قبل</b> ما تغيّر العنوان (وقت الـ version أو بعده بدقيقة). دوس "اكتبه لي" لو عايز.', 'Set a time <b>before</b> you changed the title (the version time or a minute after). Use "Type it for me" if you like.', { at: '/editor.html', next: true, fill: twFill }),
+      step('.modal [data-modal=ok]', 'دوس <b>OK</b>: هتشوف العنوان القديم والشريط الأصفر بيقول أنهي version بيتعرض.', 'Press <b>OK</b>: you will see the old title, and the strip names the version shown.', { at: '/editor.html' }),
     ] },
     { t: L('<b>Targeting</b>: اختار Text ← <b>Target</b> ← audience <b>Summer</b> ← عدّل النص', '<b>Targeting</b>: select a Text → <b>Target</b> → the <b>Summer</b> audience → change the text'), ok: () => F('target:experience'), guide: [
       modeMenu,
@@ -234,7 +251,7 @@ lesson({
 lesson({
   id: 'assets', level: 2, num: '2.3', time: 20,
   title: L('Assets (DAM)', 'Assets (DAM)'),
-  goal: L('هترفع صورة، تعدّل الـ metadata بتاعتها، تستخدمها في صفحة، وتنشرها.', 'You will upload an image, edit its metadata, use it on a page and publish it.'),
+  goal: L('هتتنقل في DAM متنظم زي المشاريع الكبيرة، ترفع صورة وتعدّل الـ metadata، تستخدمها في صفحة وتنشرها، وتفهم Force Delete والـ Move بالـ references.', 'You will browse a DAM organised like a big real project, upload an image and edit its metadata, use it on a page and publish it, and understand Force Delete and Move with references.'),
   learn: L(`
 <h4>الـ DAM</h4>
 <p><b>Digital Asset Management</b> هو المكتبة المركزية لكل الصور والفيديوهات والـ PDFs. مكانه <code>/content/dam</code>. الصفحات مش بتنسخ الصورة؛ بتشاور عليها بالـ path، فلو حدّثت الصورة في الـ DAM بتتحدث في كل الصفحات.</p>
@@ -250,7 +267,25 @@ lesson({
 <h4>Metadata</h4>
 <p>Title، Description، Tags، Copyright… بتتحفظ على <code>jcr:content/metadata</code> بأسماء زي <code>dc:title</code> (Dublin Core). الـ metadata مهمة للبحث وللـ alt text وللـ SEO.</p>
 <h4>النشر والـ references</h4>
-<p>لو نشرت صفحة فيها صورة مش منشورة، AEM بيعرض عليك تنشر الصورة معاها (references). ولو حاولت تمسح صورة مستخدمة، بيحذّرك.</p>`, `
+<p>لو نشرت صفحة فيها صورة مش منشورة، AEM بيعرض عليك تنشر الصورة معاها (references). ولو حاولت تمسح صورة مستخدمة، بيحذّرك.</p>
+<h4>تنظيم الـ DAM في مشروع حقيقي (convention شائع)</h4>
+<p>الـ Assets console بيفتح على <b>Column View</b>: كل عمود مستوى في الشجرة. كل item ليه <b>Title</b> (اللي بيتعرض) و<b>Name</b> (اسم الـ node، وبيبقى جزء من الـ URL). المشاريع الكبيرة بتمشي على convention ثابت:</p>
+<pre class="ls-diagram">/content/dam/mysite                       My Site
+└── corporate                             ← الموقع / البراند
+    └── assets                            Media Library
+        ├── images
+        │   ├── homepage                  ← فولدر لكل صفحة
+        │   │   └── c_001-hero-banner     C_001 - Hero Banner  ← فولدر لكل component
+        │   ├── about-us
+        │   └── sustainability
+        │       └── c_007-hero            C_007 -Hero
+        ├── icons
+        └── videos</pre>
+<p>كده أي حد يعرف صورة الـ Hero بتاعة صفحة Sustainability مكانها فين من غير ما يدوّر.</p>
+<h4>Delete و Force Delete و Move</h4>
+<ul><li><b>Delete Asset</b>: تأكيد عادي لو محدش بيستخدم الـ asset ومش منشور.</li>
+<li><b>Force Delete</b>: بيظهر لو الـ asset (أو أي حاجة جوه الفولدر) عليه <b>references</b> من صفحات أو fragments، أو <b>activated</b> (منشور). لو مسحت برضه، الصفحات دي هيبقى فيها صور مكسورة.</li>
+<li><b>Move</b>: بتنقل وبتغيّر الاسم، وفيه اختيار <b>Adjust references</b> بيعدّل الـ paths في الصفحات اللي بتستخدم الـ asset. بعدها لازم تنشر الصفحات دي تاني.</li></ul>`, `
 <h4>The DAM</h4>
 <p><b>Digital Asset Management</b> is the central library of images, videos and PDFs, under <code>/content/dam</code>. Pages don't copy a picture; they point at its path, so updating it in the DAM updates every page.</p>
 <h4>An asset inside</h4>
@@ -265,24 +300,59 @@ lesson({
 <h4>Metadata</h4>
 <p>Title, Description, Tags, Copyright… saved on <code>jcr:content/metadata</code> with names like <code>dc:title</code> (Dublin Core). Metadata drives search, alt text and SEO.</p>
 <h4>Publishing and references</h4>
-<p>Publishing a page that uses an unpublished image offers to publish the image too (references). Deleting an image that is in use shows a warning.</p>`),
+<p>Publishing a page that uses an unpublished image offers to publish the image too (references). Deleting an image that is in use shows a warning.</p>
+<h4>Organising the DAM on a real project (a common convention)</h4>
+<p>The Assets console opens in <b>Column View</b>: one column per tree level. Every item has a <b>Title</b> (what you see) and a <b>Name</b> (the node name, part of the URL). Big projects follow a fixed convention:</p>
+<pre class="ls-diagram">/content/dam/mysite                       My Site
+└── corporate                             ← the site / brand
+    └── assets                            Media Library
+        ├── images
+        │   ├── homepage                  ← a folder per page
+        │   │   └── c_001-hero-banner     C_001 - Hero Banner  ← a folder per component
+        │   ├── about-us
+        │   └── sustainability
+        │       └── c_007-hero            C_007 -Hero
+        ├── icons
+        └── videos</pre>
+<p>Anyone can find the Sustainability page's Hero image without searching.</p>
+<h4>Delete, Force Delete and Move</h4>
+<ul><li><b>Delete Asset</b>: a plain confirmation when nothing uses the asset and it isn't published.</li>
+<li><b>Force Delete</b>: appears when the asset (or anything in the folder) has <b>references</b> from pages or fragments, or is <b>activated</b> (published). Deleting anyway leaves broken images on those pages.</li>
+<li><b>Move</b>: moves and renames, with <b>Adjust references</b> to update the paths on pages that use the asset. Republish those pages afterwards.</li></ul>`),
   terms: [
     ['dam:Asset', L('نوع الـ node بتاع أي ملف في الـ DAM.', 'Node type of every DAM file.')],
     ['Rendition', L('نسخة من الصورة بمقاس أو format مختلف.', 'A copy of the asset in another size or format.')],
     ['fileReference', L('الـ property اللي الـ Image component بيخزن فيها path الصورة.', 'The property where the Image component stores the asset path.')],
+    ['Force Delete', L('تحذير المسح لما الـ asset عليه references أو منشور.', 'The delete warning shown when an asset has references or is published.')],
+    ['Adjust references', L('اختيار في Move بيحدّث الـ paths في الصفحات.', 'A Move option that updates the paths on pages.')],
   ],
   real: L('<ul><li>في AEM as a Cloud Service الـ renditions بتتعمل بـ <b>Asset Microservices</b> في الـ cloud بدل الـ workflow.</li><li>نظّم الـ DAM بفولدرات واضحة (موقع ← لغة ← قسم) وحط metadata من الأول، لأن الـ DAM بيكبر بسرعة جداً.</li><li>Dynamic Media (Scene7) بيقدم الصور بمقاسات وجودة أوتوماتيك حسب الجهاز.</li></ul>',
     '<ul><li>AEM as a Cloud Service creates renditions with <b>Asset Microservices</b> instead of the workflow.</li><li>Organise the DAM in clear folders (site → language → section) and add metadata early — it grows fast.</li><li>Dynamic Media (Scene7) serves images resized and optimised per device.</li></ul>'),
   tasks: [
-    { t: L('ارفع صورة في <code>/content/dam/wknd/en</code>', 'Upload an image to <code>/content/dam/wknd/en</code>'), ok: () => F('asset:uploaded'), guide: [
-      step('.titlebar summary.btn.primary ~ Create', 'دوس <b>Create</b>.', 'Press <b>Create</b>.', { at: '/assets.html/content/dam/wknd/en', go: '/assets.html/content/dam/wknd/en' }),
+    { t: L('في Column View افتح فولدر component في My Site: My Site ← corporate ← Media Library ← images ← Sustainability ← <b>C_007 -Hero</b>', 'In Column View open a My Site component folder: My Site → corporate → Media Library → images → Sustainability → <b>C_007 -Hero</b>'), why: L('ده الـ convention: صفحة ← component. لاحظ الـ Title فوق والـ Name تحته.', 'That is the convention: page → component. Note the Title on top and the Name below it.'), ok: () => F('assets:mysite'), guide: [
+      step(`.ci[data-path="${MYSITE_DAM}"]`, 'دوس <b>My Site</b>.', 'Click <b>My Site</b>.', { at: '/assets.html', go: '/assets.html/content/dam' }),
+      step(`.ci[data-path="${MYSITE_DAM}/corporate"]`, 'دوس <b>corporate</b>.', 'Click <b>corporate</b>.', { at: '/assets.html' }),
+      step(`.ci[data-path="${MYSITE_DAM}/corporate/assets"]`, 'دوس <b>Media Library</b> (اسمه <code>assets</code>).', 'Click <b>Media Library</b> (named <code>assets</code>).', { at: '/assets.html' }),
+      step(`.ci[data-path="${MYSITE_DAM}/corporate/assets/images"]`, 'دوس <b>images</b>.', 'Click <b>images</b>.', { at: '/assets.html' }),
+      step(`.ci[data-path="${MYSITE_DAM}/corporate/assets/images/sustainability"]`, 'دوس <b>Sustainability</b>.', 'Click <b>Sustainability</b>.', { at: '/assets.html' }),
+      step(`.ci[data-path="${MYSITE_DAM}/corporate/assets/images/sustainability/c_007-hero"]`, 'دوس <b>C_007 -Hero</b>.', 'Click <b>C_007 -Hero</b>.', { at: '/assets.html' }),
+    ] },
+    { t: L('اعمل فولدر component جديد في <b>about-us</b>: Title <code>C_099 - Promo Banner</code>', 'Create a new component folder in <b>about-us</b>: Title <code>C_099 - Promo Banner</code>'), why: L('سيب الـ Name فاضي وشوف AEM بيعمله إزاي من الـ Title.', 'Leave Name empty and see how AEM builds it from the Title.'), ok: () => F('asset:folder:mysite'), guide: [
+      step('.titlebar summary.btn.primary ~ Create', 'دوس <b>Create</b>.', 'Press <b>Create</b>.', { at: `/assets.html${MYSITE_DAM}/corporate/assets/images/about-us`, go: `/assets.html${MYSITE_DAM}/corporate/assets/images/about-us` }),
+      step('[data-act="assetFolder"]', 'اختار <b>Folder</b>.', 'Choose <b>Folder</b>.', { at: '/assets.html' }),
+      step('.modal input[name=title]', 'اكتب Title <code>C_099 - Promo Banner</code> وسيب الـ Name فاضي.', 'Type Title <code>C_099 - Promo Banner</code> and leave Name empty.', { at: '/assets.html', next: true, fill: 'C_099 - Promo Banner' }),
+      step('.modal [data-modal=ok]', 'دوس <b>Create</b>.', 'Press <b>Create</b>.', { at: '/assets.html' }),
+    ] },
+    { t: L('ارفع صورة جوه الفولدر اللي عملته', 'Upload an image into the folder you created'), ok: () => F('asset:uploaded:mysite'), guide: [
+      step(null, 'دوس على الفولدر بتاعك (<b>C_099 - Promo Banner</b>) في العمود عشان تفتحه.', 'Click your folder (<b>C_099 - Promo Banner</b>) in the column to open it.', { at: '/assets.html', go: `/assets.html${MYSITE_DAM}/corporate/assets/images/about-us`, next: true }),
+      step('.titlebar summary.btn.primary ~ Create', 'دوس <b>Create</b>.', 'Press <b>Create</b>.', { at: '/assets.html' }),
       step('[data-act="assetUpload"]', 'اختار <b>Files</b>.', 'Choose <b>Files</b>.', { at: '/assets.html' }),
-      step('.modal input[name=title]', 'اكتب Title (مثلاً <code>Camel trek</code>). وسيب "Generate a sample image" أو ارفع صورة من جهازك.', 'Type a Title (e.g. <code>Camel trek</code>). Keep "Generate a sample image" or upload one from your computer.', { at: '/assets.html', next: true }),
+      step('.modal input[name=title]', 'اكتب Title (مثلاً <code>Promo Banner</code>). وسيب "Generate a sample image" أو ارفع صورة من جهازك.', 'Type a Title (e.g. <code>Promo Banner</code>). Keep "Generate a sample image" or upload one from your computer.', { at: '/assets.html', next: true }),
       step('.modal [data-modal=ok]', 'دوس <b>Upload</b>.', 'Press <b>Upload</b>.', { at: '/assets.html' }),
     ] },
-    { t: L('عدّل الـ metadata: Title و Description', 'Edit the metadata: Title and Description'), ok: () => F('asset:props'), guide: [
-      step('.acard[data-act="assetSel"]', 'دوس على كارت الصورة عشان تختارها.', 'Click the image card to select it.', { at: '/assets.html/content/dam/wknd/en', go: '/assets.html/content/dam/wknd/en' }),
-      step('.selbar [data-act="assetProps"]', 'دوس <b>Properties</b>.', 'Press <b>Properties</b>.', { at: '/assets.html' }),
+    { t: L('دوس على الصورة وشوف الـ details (Dimensions, Size, Type)، وبعدين <b>Properties</b> وعدّل Title و Description', 'Click the image to see its details (Dimensions, Size, Type), then <b>Properties</b> and edit Title and Description'), ok: () => F('asset:props'), guide: [
+      step('[data-act="assetSel"][data-kind="asset"]', 'دوس على الصورة: هتتحدد ويظهر عمود الـ details على اليمين.', 'Click the image: it gets selected and the details column opens on the right.', { at: '/assets.html/content/dam/wknd/en', go: '/assets.html/content/dam/wknd/en' }),
+      step('.selbar [data-act="assetProps"]', 'دوس <b>Properties</b> (أو More Details).', 'Press <b>Properties</b> (or More Details).', { at: '/assets.html' }),
       step('.modal textarea[name=desc]', 'اكتب Description.', 'Write a Description.', { at: '/assets.html', next: true }),
       step('.modal [data-modal=ok]', 'دوس <b>Save &amp; Close</b>.', 'Press <b>Save &amp; Close</b>.', { at: '/assets.html' }),
     ] },
@@ -295,9 +365,20 @@ lesson({
       step('.sp-asset', 'اسحب صورة على الصفحة، أو اختار Image component ودوس على صورة.', 'Drag a picture onto the page, or select an Image component and click a picture.', { at: '/editor.html', next: true }),
     ] },
     { t: L('اعمل <b>Quick Publish</b> للصورة', '<b>Quick Publish</b> the image'), ok: () => F('asset:published'), guide: [
-      step('.acard[data-act="assetSel"]', 'اختار الصورة.', 'Select the image.', { at: '/assets.html/content/dam/wknd/en', go: '/assets.html/content/dam/wknd/en' }),
+      step('[data-act="assetSel"][data-kind="asset"]', 'اختار الصورة.', 'Select the image.', { at: '/assets.html/content/dam/wknd/en', go: '/assets.html/content/dam/wknd/en' }),
       step('.selbar [data-act="assetPublish"]', 'دوس <b>Quick Publish</b>.', 'Press <b>Quick Publish</b>.', { at: '/assets.html' }),
     ] },
+    { t: L('امسح فولدر <b>Test-page</b> في My Site (مفيش references فهيطلع Delete عادي)', 'Delete the My Site <b>Test-page</b> folder (no references, so a plain Delete)'), ok: () => F('asset:deleted'), guide: [
+      step(`.ci[data-path="${MYSITE_TEST}"] .ci-thumb`, 'دوس على أيقونة الفولدر (مش الاسم) عشان تختاره.', 'Click the folder icon (not the name) to select it.', { at: `/assets.html${MYSITE_DAM}/corporate/assets/images`, go: `/assets.html${MYSITE_DAM}/corporate/assets/images` }),
+      step('.selbar [data-act="assetDelete"]', 'دوس <b>Delete</b>.', 'Press <b>Delete</b>.', { at: '/assets.html' }),
+      step('.modal [data-modal=ok]', 'دوس <b>Delete</b> في "Delete Asset".', 'Press <b>Delete</b> in "Delete Asset".', { at: '/assets.html' }),
+    ] },
+    { t: L('جرّب تمسح صورة مستخدمة في صفحة (<code>old-town.svg</code>) وشوف <b>Force Delete</b>، ودوس Cancel', 'Try deleting an image used on a page (<code>old-town.svg</code>), see <b>Force Delete</b>, and press Cancel'), why: L('الصفحة الرئيسية بتستخدمها، فـ AEM بيوريك مين بيشاور عليها قبل ما تمسح.', 'The home page uses it, so AEM shows who points to it before you delete.'), ok: () => F('asset:forcedelete'), guide: [
+      step('[data-act="assetSel"][data-path="/content/dam/wknd/en/old-town.svg"]', 'دوس على <b>Old Town</b>.', 'Click <b>Old Town</b>.', { at: '/assets.html/content/dam/wknd/en', go: '/assets.html/content/dam/wknd/en' }),
+      step('.selbar [data-act="assetDelete"]', 'دوس <b>Delete</b>.', 'Press <b>Delete</b>.', { at: '/assets.html' }),
+      step('.modal [data-modal=ok]', 'دوس <b>Delete</b>: هيطلعلك Force Delete بالـ references. دوس <b>Cancel</b>!', 'Press <b>Delete</b>: Force Delete shows the references. Press <b>Cancel</b>!', { at: '/assets.html' }),
+    ] },
+    { t: L('(متقدم) <b>Move</b> صورة مستخدمة لفولدر تاني مع <b>Adjust references</b>، وتأكد إن الصفحة لسه بتعرضها', '(Advanced) <b>Move</b> a used image to another folder with <b>Adjust references</b>, and check the page still shows it'), hint: L('اختار صورة استخدمتها في about ← Move ← اختار Destination وسيب Adjust references متعلّم.', 'Pick an image you used on about → Move → choose a Destination and keep Adjust references ticked.'), ok: () => F('asset:moved:refs') },
   ],
   quiz: [
     { q: L('عدّلت صورة في الـ DAM. الصفحات اللي بتستخدمها؟', 'You updated an image in the DAM. Pages that use it…'), a: [L('محتاجة تتعدّل يدوي', 'must be edited by hand'), L('بتشاور على نفس الـ path فبتاخد التحديث (بعد النشر)', 'point to the same path, so they get the update (once published)'), L('بتتمسح', 'are deleted')], c: 1, why: L('الصفحة بتخزن <code>fileReference</code> مش نسخة من الصورة.', 'Pages store a <code>fileReference</code>, not a copy.') },
@@ -453,7 +534,7 @@ lesson({
     { t: L('Assets ← Adventures ← Create ← <b>Content Fragment</b>، واملاه واحفظ', 'Assets → Adventures → Create → <b>Content Fragment</b>, fill it and save'), ok: () => F('cf:created') && F('cf:saved'), guide: [
       step('.titlebar summary.btn.primary ~ Create', 'دوس <b>Create</b>.', 'Press <b>Create</b>.', { at: '/assets.html/content/dam/wknd/en/adventures', go: '/assets.html/content/dam/wknd/en/adventures' }),
       step('[data-act="cfCreate"]', 'اختار <b>Content Fragment</b>.', 'Choose <b>Content Fragment</b>.', { at: '/assets.html' }),
-      step('.modal input[name=title]', 'سيب model <b>Adventure</b> واكتب Title (مثلاً <code>Diriyah Night Walk</code>).', 'Keep the <b>Adventure</b> model and type a Title (e.g. <code>Diriyah Night Walk</code>).', { at: '/assets.html', next: true }),
+      step('.modal input[name=title]', 'سيب model <b>Adventure</b> واكتب Title (مثلاً <code>City Night Walk</code>).', 'Keep the <b>Adventure</b> model and type a Title (e.g. <code>City Night Walk</code>).', { at: '/assets.html', next: true }),
       step('.modal [data-modal=ok]', 'دوس <b>Create</b>: هيفتح محرر الـ fragment.', 'Press <b>Create</b>: the fragment editor opens.', { at: '/assets.html' }),
       step('[data-act="cfSave"]', 'املا الـ fields (اللي عليها * مطلوبة) ودوس <b>Save</b>.', 'Fill the fields (the ones marked * are required) and press <b>Save</b>.', { at: /^\/editor\.html\/content\/dam\// }),
     ] },
@@ -465,13 +546,132 @@ lesson({
     ] },
     { t: L('<b>Publish</b> للـ query وافتح <code>/graphql/execute.json/wknd/&lt;name&gt;</code> على Publish', '<b>Publish</b> the query and open <code>/graphql/execute.json/wknd/&lt;name&gt;</code> on Publish'), ok: () => F('gql:url:publish'), guide: [
       step('[data-act="gqlPublish"]', 'في قايمة Persisted Queries دوس <b>Publish</b> جنب الـ query بتاعتك.', 'In the Persisted Queries list press <b>Publish</b> next to your query.', { at: '/aem/graphiql.html', go: GRAPHIQL_URL + '?tab=persisted' }),
-      step('.addr input[name=url]', 'افتح تاب <b>Publish</b> واكتب <code>/graphql/execute.json/wknd/&lt;name&gt;</code>.', 'Open the <b>Publish</b> tab and type <code>/graphql/execute.json/wknd/&lt;name&gt;</code>.', { tab: 'publish', next: true }),
+      step('.addr input[name=url]', 'في تاب <b>Publish</b> اكتب في خانة العنوان <code>/graphql/execute.json/wknd/</code> + اسم الـ query اللي حفظته (دوس "اكتبه لي")، وبعدين <b>Go</b>.', 'In the <b>Publish</b> tab type <code>/graphql/execute.json/wknd/</code> + the name you saved (use "Type it for me"), then <b>Go</b>.', { tab: 'publish', next: true, fill: gqlUrl }),
     ] },
-    { t: L('افتح نفس الـ URL على <b>Dispatcher</b> مرتين: التانية من الـ cache', 'Open the same URL on the <b>Dispatcher</b> twice: the second comes from cache'), ok: () => F('dispatcher:gql'), guide: [step('.addr input[name=url]', 'اكتب نفس الـ URL في تاب Dispatcher واضغط Enter مرتين.', 'Type the same URL in the Dispatcher tab and press Enter twice.', { tab: 'dispatcher', next: true })] },
+    { t: L('افتح نفس الـ URL على <b>Dispatcher</b> مرتين: التانية من الـ cache', 'Open the same URL on the <b>Dispatcher</b> twice: the second comes from cache'), ok: () => F('dispatcher:gql'), guide: [step('.addr input[name=url]', 'اكتب نفس الـ URL في تاب Dispatcher (أو دوس "اكتبه لي") واضغط <b>Go</b> مرتين.', 'Type the same URL in the Dispatcher tab (or use "Type it for me") and press <b>Go</b> twice.', { tab: 'dispatcher', next: true, fill: gqlUrl })] },
   ],
   quiz: [
     { q: L('ليه persisted queries أحسن من POST في الـ production؟', 'Why are persisted queries better than POST in production?'), a: [L('أسرع في الكتابة', 'Faster to write'), L('GET URL ثابت يتعمله cache في الـ Dispatcher والـ CDN', 'A fixed GET URL that the Dispatcher and CDN can cache'), L('مش محتاجة publish', 'They need no publishing')], c: 1, why: L('الـ POST مش بيتعمله cache.', 'POST responses are not cached.') },
     { q: L('الـ fragments نفسها متخزنة فين؟', 'Where are the fragments themselves stored?'), a: [L('/conf', '/conf'), L('/content/dam', '/content/dam'), L('/apps', '/apps')], c: 1, why: L('الـ models في /conf والـ fragments في الـ DAM.', 'Models live in /conf; fragments in the DAM.') },
     { q: L('الـ query شغالة على Author ومش على Publish. ناقص إيه غالباً؟', 'A query works on Author but not Publish. Usually missing?'), a: [L('نشر الـ query والـ fragments والـ model', 'Publishing the query, fragments and model'), L('restart', 'A restart'), L('clientlib', 'A clientlib')], c: 0, why: L('كله لازم يكون موجود على الـ Publish.', 'Everything must exist on Publish.') },
+  ],
+});
+
+const HOME_ED = `/editor.html${MYSITE_HOME}`;
+const MP_ED = `/editor.html${MYSITE_PROJECTS}`;
+const cfTabTo = (p, i) => () => { S.ui.cfTab = { ...(S.ui.cfTab || {}), [p]: i }; commit(); };
+const masterOf = p => (JCR.get(AR(), p + '/jcr:content/data/master') || { props: {} }).props;
+const mpComps = () => [].concat(masterOf(MYSITE_PROJECTS).components || []).filter(Boolean);
+
+lesson({
+  id: 'headless', level: 2, num: '2.6', time: 40,
+  title: L('Headless pages with Content Fragments', 'Headless pages with Content Fragments'),
+  goal: L('هتشتغل زي مشاريع الـ headless الكبيرة: الصفحة Content Fragment من model اسمه Page، الـ components fragments بتتشاور عليها بالترتيب، والـ frontend بيرسم الصفحة من GraphQL.', 'You will work like big headless projects do: a page is a Content Fragment of the Page model, its components are fragments referenced in order, and a frontend renders it from GraphQL.'),
+  learn: L(`
+<h4>صفحات من غير Page Editor</h4>
+<p>في مشاريع <b>headless</b>، AEM مش بيرسم الـ HTML. الـ authors بيكتبوا المحتوى كـ <b>Content Fragments</b>، و<b>frontend</b> منفصل (Next.js) بيطلب البيانات بـ <b>GraphQL</b> ويرسم الصفحة.</p>
+<h4>الهيكل في الـ DAM</h4>
+<pre class="ls-diagram">/content/dam/mysite/corporate/cf
+├── page/en
+│   ├── homepage        Home          ← fragment من model "Page"
+│   └── projects        Projects  
+└── comp/en
+    ├── header/c_002-header/c_002-header
+    └── homepage
+        ├── c_007-hero/c_007-hero                     ← fragment من model "C_007 Hero"
+        ├── c069-intro-text-block/c069-intro-text-block
+        └── …                                           (فولدر لكل component)</pre>
+<h4>الـ Page model والـ tabs</h4>
+<p>الـ tabs اللي بتشوفها في الـ editor (Properties, Style, Meta Data, Header, Components, Footer) جاية من fields نوعها <b>Tab Placeholder</b> في الـ model. كل field بعد الـ placeholder بيظهر في التاب بتاعه.</p>
+<p>تاب <b>Components</b> فيه field واحد: <b>Fragment Reference</b> متعلّم عليه <b>multiple</b>. كل سطر path لـ component fragment، و<b>ترتيب السطور هو ترتيب الصفحة</b>.</p>
+<h4>من AEM للموقع</h4>
+<pre class="ls-diagram">Author: تعدّل fragment ← Save ← Publish (مع الـ references)
+Publish: الـ fragments موجودة
+Frontend: pageByPath(_path: ".../page/en/homepage") ← JSON ← HTML</pre>
+<p>لو نشرت الصفحة من غير الـ components الجديدة، الـ frontend على Publish مش هيلاقيها. عشان كده AEM بيعرض عليك تنشر الـ <b>references</b> مع الـ fragment.</p>`, `
+<h4>Pages without the Page Editor</h4>
+<p>On <b>headless</b> projects, AEM doesn't render the HTML. Authors write content as <b>Content Fragments</b>, and a separate <b>frontend</b> (Next.js) asks for the data with <b>GraphQL</b> and renders the page.</p>
+<h4>The structure in the DAM</h4>
+<pre class="ls-diagram">/content/dam/mysite/corporate/cf
+├── page/en
+│   ├── homepage        Home          ← a fragment of the "Page" model
+│   └── projects        Projects  
+└── comp/en
+    ├── header/c_002-header/c_002-header
+    └── homepage
+        ├── c_007-hero/c_007-hero                     ← a fragment of the "C_007 Hero" model
+        ├── c069-intro-text-block/c069-intro-text-block
+        └── …                                           (a folder per component)</pre>
+<h4>The Page model and its tabs</h4>
+<p>The tabs in the editor (Properties, Style, Meta Data, Header, Components, Footer) come from <b>Tab Placeholder</b> fields in the model. Every field after a placeholder shows in that tab.</p>
+<p>The <b>Components</b> tab holds one field: a <b>Fragment Reference</b> marked <b>multiple</b>. Each row is the path of a component fragment, and <b>the row order is the page order</b>.</p>
+<h4>From AEM to the site</h4>
+<pre class="ls-diagram">Author: edit a fragment → Save → Publish (with references)
+Publish: the fragments are there
+Frontend: pageByPath(_path: ".../page/en/homepage") → JSON → HTML</pre>
+<p>If you publish the page without its new components, the frontend on Publish can't find them. That is why AEM offers to publish the <b>references</b> with the fragment.</p>`),
+  terms: [
+    ['Headless', L('AEM بيخزن وينشر المحتوى، والـ HTML بيترسم في frontend منفصل.', 'AEM stores and publishes content; a separate frontend renders the HTML.')],
+    ['Tab Placeholder', L('نوع field في الـ model بيقسّم الـ editor لـ tabs.', 'A model field type that splits the editor into tabs.')],
+    ['Fragment Reference (multiple)', L('list من paths لـ fragments تانية، بترتيب.', 'An ordered list of paths to other fragments.')],
+    ['Select Path', L('الـ picker اللي بتختار بيه الـ fragment.', 'The picker you choose a fragment with.')],
+  ],
+  real: L('<ul><li>اسم الـ folder والـ fragment بنفس الـ component code (مثلاً <code>c_007-hero/c_007-hero</code>) عشان أي حد يلاقي أي block بسرعة.</li><li>الـ frontend بيحتاج renderer لكل component model. لو عملت model جديد، لازم developer يضيف الـ renderer بتاعه.</li><li>الـ Next.js في المشروع الحقيقي غالباً بيستخدم persisted queries على Publish عن طريق الـ CDN.</li></ul>',
+    '<ul><li>The folder and the fragment carry the component code (e.g. <code>c_007-hero/c_007-hero</code>) so anyone finds any block fast.</li><li>The frontend needs a renderer per component model. A new model needs a developer to add its renderer.</li><li>The real Next.js app usually calls persisted queries on Publish through the CDN.</li></ul>'),
+  tasks: [
+    { t: L('افتح صفحة <b>Home</b>: Assets ← My Site ← corporate ← cf ← page ← en ← Home ← <b>Edit</b>', 'Open the <b>Home</b> page: Assets → My Site → corporate → cf → page → en → Home → <b>Edit</b>'), why: L('الصفحة هنا Content Fragment، مش cq:Page.', 'Here a page is a Content Fragment, not a cq:Page.'), ok: () => F('cfe:open:page'), guide: [
+      step(`.ci[data-path="${MYSITE_CF}"]`, 'دوس <b>cf</b>.', 'Click <b>cf</b>.', { at: '/assets.html', go: `/assets.html${MYSITE_DAM}/corporate` }),
+      step(`.ci[data-path="${MYSITE_CF}/page"]`, 'دوس <b>page</b>.', 'Click <b>page</b>.', { at: '/assets.html' }),
+      step(`.ci[data-path="${MYSITE_CF}/page/en"]`, 'دوس <b>en</b>.', 'Click <b>en</b>.', { at: '/assets.html' }),
+      step(`[data-act="assetSel"][data-path="${MYSITE_HOME}"]`, 'دوس على <b>Home</b>: هتتحدد وتشوف الـ Model في الـ details.', 'Click <b>Home</b>: it gets selected and the details show its Model.', { at: '/assets.html' }),
+      step('.selbar [data-act="cfOpen"]', 'دوس <b>Edit</b>.', 'Press <b>Edit</b>.', { at: '/assets.html' }),
+    ] },
+    { t: L('افتح تاب <b>Components</b> وشوف الـ components بالترتيب', 'Open the <b>Components</b> tab and see the components in order'), why: L('كل سطر path لـ fragment. أول سطر = أول block في الصفحة.', 'Each row is a fragment path. The first row is the first block on the page.'), ok: () => F('cfe:tab:components'), guide: [
+      step('.cfe-tabs a ~ Components', 'دوس تاب <b>Components</b>.', 'Click the <b>Components</b> tab.', { at: HOME_ED, go: HOME_ED }),
+    ] },
+    { t: L('<b>Edit Content Fragment</b> للـ Hero، غيّر الـ Title واحفظ', '<b>Edit Content Fragment</b> on the Hero, change its Title and save'), ok: () => { const t = masterOf(MYSITE_HOME_HERO).title; return !!t && t !== MYSITE_HERO_TITLE; }, guide: [
+      step(`[data-act="cfRefEdit"][data-p="${MYSITE_HOME_HERO}"]`, 'تحت أول سطر دوس <b>Edit Content Fragment</b>: هيفتح الـ Hero في تاب جديد فوق.', 'Under the first row press <b>Edit Content Fragment</b>: the Hero opens in a new tab at the top.', { at: HOME_ED, go: HOME_ED, prep: cfTabTo(MYSITE_HOME, 4) }),
+      step('.cfe-form [data-cff="title"]', 'غيّر الـ <b>Title</b>.', 'Change the <b>Title</b>.', { at: '/editor.html', next: true, fill: 'Where great places begin, and grow' }),
+      step('.cfe-save > [data-act="cfSave"]', 'دوس <b>Save</b>.', 'Press <b>Save</b>.', { at: '/editor.html' }),
+    ] },
+    { t: L('شوف الصفحة على الـ frontend (Author preview): ⋯ ← <b>Preview on the frontend</b>', 'See the page on the frontend (Author preview): ⋯ → <b>Preview on the frontend</b>'), why: L('الـ frontend بيقرا من Author هنا، فهتشوف الـ Title الجديد فوراً. جرّب "Show query & JSON".', 'Here the frontend reads Author, so the new Title shows at once. Try "Show query & JSON".'), ok: () => F('headless:author:homepage'), guide: [
+      step('.cfe-bar summary.iconbtn', 'دوس <b>⋯</b> جنب Save.', 'Press <b>⋯</b> next to Save.', { at: HOME_ED, go: HOME_ED }),
+      step('[data-act="cfPreview"]', 'اختار <b>Preview on the frontend</b>.', 'Choose <b>Preview on the frontend</b>.', { at: HOME_ED }),
+    ] },
+    { t: L('غيّر الترتيب: طلّع <b>Intro Text Block</b> فوق الـ Hero واحفظ', 'Reorder: move the <b>Intro Text Block</b> above the Hero and save'), ok: () => String([].concat(masterOf(MYSITE_HOME).components || [])[0] || '').includes('c069-intro-text-block'), guide: [
+      step('[data-act="cfRefMove"][data-f="components"][data-i="1"][data-dir="-1"]', 'في السطر التاني دوس السهم <b>↑</b>.', 'On the second row press the <b>↑</b> arrow.', { at: HOME_ED, go: HOME_ED, prep: cfTabTo(MYSITE_HOME, 4) }),
+      step('.cfe-save > [data-act="cfSave"]', 'دوس <b>Save</b>، وبعدين بص على الـ preview تاني.', 'Press <b>Save</b>, then look at the preview again.', { at: HOME_ED }),
+    ] },
+    { t: L('صفحة <b>Projects</b> فاضية: ضيف Hero جديد بـ <b>New Content Fragment</b>، وضيف الـ Intro الموجود بـ <b>Add</b> + Select Path، واحفظ', 'The <b>Projects</b> page is empty: add a new Hero with <b>New Content Fragment</b>, add the existing Intro with <b>Add</b> + Select Path, and save'), ok: () => mpComps().length >= 2 && !!F('cfe:newref'), guide: [
+      step('[data-act="cfRefNew"]', 'دوس <b>New Content Fragment</b>.', 'Press <b>New Content Fragment</b>.', { at: MP_ED, go: MP_ED, prep: cfTabTo(MYSITE_PROJECTS, 4) }),
+      step('.modal [name=title]', 'سيب الـ Model <b>C_007 Hero</b> واكتب Title (مثلاً <code>C_007 - Projects Hero</code>). لاحظ الـ Parent folder: <code>comp/en/projects</code>.', 'Keep the <b>C_007 Hero</b> model and type a Title (e.g. <code>C_007 - Projects Hero</code>). Note the Parent folder: <code>comp/en/projects</code>.', { at: MP_ED, next: true, fill: 'C_007 - Projects Hero' }),
+      step('.modal [data-modal=ok]', 'دوس <b>Create</b>.', 'Press <b>Create</b>.', { at: MP_ED }),
+      step('[data-act="cfRefAdd"]', 'دوس <b>Add</b> عشان سطر جديد.', 'Press <b>Add</b> for a new row.', { at: MP_ED }),
+      step('[data-act="cfRefPick"][data-i="1"]', 'دوس أيقونة <b>Open selection dialog</b> في السطر الجديد.', 'Press the <b>Open selection dialog</b> icon on the new row.', { at: MP_ED }),
+      step('.picker', 'في <b>Select Path</b>: homepage ← C069-Intro-Text-Block ← دوس على الـ fragment ← <b>Select</b>.', 'In <b>Select Path</b>: homepage → C069-Intro-Text-Block → click the fragment → <b>Select</b>.', { at: MP_ED, next: true }),
+      step('.cfe-save > [data-act="cfSave"]', 'دوس <b>Save</b>.', 'Press <b>Save</b>.', { at: MP_ED }),
+    ] },
+    { t: L('املا الـ Hero الجديد: <b>Edit Content Fragment</b> ← Title ← Save', 'Fill the new Hero: <b>Edit Content Fragment</b> → Title → Save'), why: L('الـ Title مطلوب، ومن غيره الـ Hero هيظهر فاضي.', 'The Title is required; without it the Hero shows empty.'), ok: () => mpComps().some(p => String(cfModelOf(AR(), p)).endsWith('/hero') && masterOf(p).title), guide: [
+      step('[data-act="cfRefEdit"]', 'دوس <b>Edit Content Fragment</b> تحت الـ Hero الجديد.', 'Press <b>Edit Content Fragment</b> under the new Hero.', { at: MP_ED, go: MP_ED, prep: cfTabTo(MYSITE_PROJECTS, 4) }),
+      step('.cfe-form [data-cff="title"]', 'اكتب Title (مثلاً <code>Our Projects</code>).', 'Type a Title (e.g. <code>Our Projects</code>).', { at: '/editor.html', next: true, fill: 'Our Projects' }),
+      step('.cfe-save > [data-act="cfSave"]', 'دوس <b>Save</b>.', 'Press <b>Save</b>.', { at: '/editor.html' }),
+    ] },
+    { t: L('انشر Projects <b>مع الـ references</b>: ⋯ ← Publish', 'Publish Projects <b>with its references</b>: ⋯ → Publish'), why: L('الـ Hero الجديد مش منشور. لو نشرت الصفحة لوحدها، الـ frontend على Publish مش هيلاقيه.', 'The new Hero is not published. Publishing the page alone leaves the frontend on Publish without it.'), ok: () => !!JCR.get(PR(), MYSITE_PROJECTS) && mpComps().length > 0 && mpComps().every(p => JCR.get(PR(), p)), guide: [
+      step('.cfe-bar summary.iconbtn', 'دوس <b>⋯</b>.', 'Press <b>⋯</b>.', { at: MP_ED, go: MP_ED }),
+      step('[data-act="cfPublishPath"]', 'اختار <b>Publish</b>.', 'Choose <b>Publish</b>.', { at: MP_ED }),
+      step('.modal [data-modal=ok]', 'سيب الـ references متعلّم عليها ودوس <b>Publish</b>.', 'Keep the references ticked and press <b>Publish</b>.', { at: MP_ED }),
+    ] },
+    { t: L('افتح <code>/frontend/mysite/en/projects</code> على تاب <b>Publish</b>', 'Open <code>/frontend/mysite/en/projects</code> in the <b>Publish</b> tab'), ok: () => F('headless:publish:projects'), guide: [
+      step('.addr input[name=url]', 'في تاب <b>Publish</b> اكتب <code>/frontend/mysite/en/projects</code> ودوس Go.', 'In the <b>Publish</b> tab type <code>/frontend/mysite/en/projects</code> and press Go.', { tab: 'publish', next: true, fill: '/frontend/mysite/en/projects' }),
+    ] },
+    { t: L('(متقدم) افتح model <b>Page</b> في Content Fragment Models وشوف الـ <b>Tab Placeholders</b>', '(Advanced) Open the <b>Page</b> model in Content Fragment Models and find the <b>Tab Placeholders</b>'), ok: () => F('cfm:open:mysite'), guide: [
+      step(`.acard[data-act="cfmSel"][data-path="${MYSITE_CFM}/page"]`, 'تحت <b>My Site</b> اختار model <b>Page</b>.', 'Under <b>My Site</b> select the <b>Page</b> model.', { at: CFM_URL, go: CFM_URL }),
+      step('.selbar [data-act="cfmOpen"]', 'دوس <b>Edit</b>: الصفوف المنقطة هي الـ Tab Placeholders.', 'Press <b>Edit</b>: the dashed rows are the Tab Placeholders.', { at: CFM_URL }),
+    ] },
+  ],
+  quiz: [
+    { q: L('ترتيب الـ components في الصفحة بيتحدد منين؟', 'What sets the order of components on the page?'), a: [L('ترتيب السطور في field الـ Component Section', 'The row order in the Component Section field'), L('ترتيب الفولدرات في الـ DAM', 'The folder order in the DAM'), L('تاريخ إنشاء كل fragment', 'Each fragment\'s creation date')], c: 0, why: L('الـ multiple fragment reference بيحفظ list بترتيب، والـ GraphQL بيرجّعها بنفس الترتيب.', 'A multiple fragment reference stores an ordered list, and GraphQL returns it in that order.') },
+    { q: L('الـ tabs (Properties, Style…) في الـ CF editor جاية منين؟', 'Where do the editor tabs (Properties, Style…) come from?'), a: [L('fields نوعها Tab Placeholder في الـ model', 'Tab Placeholder fields in the model'), L('الـ frontend', 'The frontend'), L('الـ template', 'The page template')], c: 0, why: L('كل Tab Placeholder بيبدأ tab، والـ fields اللي بعده بتظهر فيه.', 'Each Tab Placeholder starts a tab; the fields after it show in it.') },
+    { q: L('عدّلت Hero ونشرت الصفحة بس. الـ frontend على Publish؟', 'You edited a Hero and published only the page. The frontend on Publish…'), a: [L('بيعرض الـ Hero القديم: لازم تنشر الـ Hero نفسه (reference)', 'shows the old Hero: the Hero itself (a reference) must be published'), L('بيعرض الجديد', 'shows the new one'), L('بيقع', 'crashes')], c: 0, why: L('كل fragment بيتنشر لوحده؛ الصفحة بتشاور على الـ Hero بس مش بتنسخه.', 'Each fragment is published on its own; the page points to the Hero, it doesn\'t copy it.') },
   ],
 });

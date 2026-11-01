@@ -138,7 +138,7 @@ function treeFor(cx) {
 // The container new components go into: the selected container, or the first editable one
 function insertTarget(cx) {
   const info = S.ui.editor.info;
-  if (info && info.container === '1' && info.kind !== 'locked') return { path: info.cmp, ckey: info.ckey, srt: info.srt || info.rt };
+  if (info && info.container === '1' && info.kind !== 'locked' && !(info.kind === 'struct' && info.unlocked === '1')) return { path: info.cmp, ckey: info.ckey, srt: info.srt || info.rt };
   let found = null;
   const walk = t => {
     if (found || !t) return;
@@ -331,7 +331,7 @@ function wireDrop(d, cx) {
     const cmp = el.closest('[data-cmp]');
     if (!cmp || cmp.dataset.del !== '1') return null;
     const parent = cmp.parentElement.closest('[data-cmp]');
-    if (!parent || parent.dataset.container !== '1' || parent.dataset.kind === 'locked') return null;
+    if (!parent || parent.dataset.container !== '1' || parent.dataset.kind === 'locked' || (parent.dataset.kind === 'struct' && parent.dataset.unlocked === '1')) return null;
     return { box: cmp, target: { path: parent.dataset.cmp, ckey: parent.dataset.ckey, srt: parent.dataset.srt || parent.dataset.rt }, after: JCR.name(cmp.dataset.cmp) };
   };
   let over = null;
@@ -412,7 +412,9 @@ function toolbarHtml(cx, info) {
     if (cx.kind !== 'struct') h += btn('copy', 'Copy', 'Copy');
     h += btn('del', 'Delete', 'Delete');
   }
-  if (info.container === '1') h += btn('insert', 'Add', 'Insert component');
+  // an unlocked container belongs to authors: its components are added in Initial Content or on the page
+  if (info.container === '1' && !(cx.kind === 'struct' && info.unlocked === '1')) h += btn('insert', 'Add', 'Insert component');
+  if (cx.kind === 'struct' && info.container === '1' && info.unlocked === '1') h += btn('initial', 'FileTemplate', 'Add components in Initial Content');
   if (cx.kind !== 'struct' && info.container === '1' && S.ui.editor.clip) h += btn('paste', 'Paste', 'Paste');
   if (info.del === '1') h += btn('up', 'ArrowUp', 'Move up') + btn('down', 'ArrowDown', 'Move down');
   h += btn('parent', 'SelectContainer', 'Parent');
@@ -434,6 +436,7 @@ function editorAction(cx, act, info, d) {
   if (act === 'lock') return toggleStructLock(cx, info);
   if (act === 'insert') return openInsertDialog(cx, { path: info.cmp, ckey: info.ckey, srt: info.srt || info.rt });
   if (act === 'tpl') return go('/editor.html' + cx.tpl + '/structure.html');
+  if (act === 'initial') return go('/editor.html' + cx.tpl + '/initial.html');
   if (act === 'crx') return crxReveal('author', info.exists === '1' ? info.cmp : JCR.parent(info.cmp));
   if (act === 'parent') {
     const el = d.querySelector(`[data-cmp="${CSS.escape(info.cmp)}"]`);
@@ -666,28 +669,78 @@ function openStyles(cx, info) {
 
 /* ---------- template structure: lock / unlock ---------- */
 
+// Moves the child components of `from` into `to` (skipping names `to` already has); returns how many moved
+function moveCmpChildren(from, to) {
+  const kids = from.children.filter(isCmpNode);
+  let moved = 0;
+  for (const k of kids) {
+    if (!to.children.some(c => c.name === k.name)) { to.children.push(JCR.clone(k)); moved++; }
+    from.children.splice(from.children.indexOf(k), 1);
+  }
+  return moved;
+}
+
+// Unlocking hands a component to authors: its starting content lives in Initial Content, not in the Structure.
+// Components already inside an unlocked container therefore move to Initial Content (and back again on lock).
+function unlockStruct(r, tpl, pkey) {
+  const sn = JCR.get(r, tpl + '/structure/jcr:content/' + pkey);
+  const ip = tpl + '/initial/jcr:content/' + pkey;
+  sn.props.editable = true;
+  let init = JCR.get(r, ip);
+  if (!init) {
+    JCR.ensure(r, JCR.parent(ip));
+    init = JCR.clone(sn);
+    delete init.props.editable;
+    init.children = init.children.filter(c => !isCmpNode(c));
+    init.name = JCR.name(ip);
+    JCR.put(r, JCR.parent(ip), init);
+  }
+  return moveCmpChildren(sn, init);
+}
+
+function lockStruct(r, tpl, pkey) {
+  const sn = JCR.get(r, tpl + '/structure/jcr:content/' + pkey);
+  const ip = tpl + '/initial/jcr:content/' + pkey;
+  delete sn.props.editable;
+  const init = JCR.get(r, ip);
+  const moved = init ? moveCmpChildren(init, sn) : 0;
+  JCR.remove(r, ip);
+  return moved;
+}
+
+// Older lab states could hold components inside an unlocked container's structure; pages never showed them
+function fixUnlockedStructure(r) {
+  let changed = false;
+  for (const conf of JCR.get(r, '/conf')?.children || []) {
+    const tpls = JCR.get(r, `/conf/${conf.name}/settings/wcm/templates`);
+    for (const t of tpls ? tpls.children : []) {
+      const base = `/conf/${conf.name}/settings/wcm/templates/${t.name}`;
+      const walk = (n, rel) => {
+        if (n.props.editable && n.children.some(isCmpNode)) { unlockStruct(r, base, rel); changed = true; }
+        else n.children.filter(isCmpNode).forEach(c => walk(c, rel + '/' + c.name));
+      };
+      const root = JCR.get(r, base + '/structure/jcr:content/root');
+      if (root) walk(root, 'root');
+    }
+  }
+  return changed;
+}
+
 function toggleStructLock(cx, info) {
   const r = AR();
   const sn = JCR.get(r, info.cmp);
   if (!sn) return;
-  const ip = cx.tpl + '/initial/jcr:content/' + info.pkey;
+  const kids = n => (n === 1 ? '1 component' : n + ' components');
   if (sn.props.editable) {
-    delete sn.props.editable;
-    JCR.remove(r, ip);
+    const n = lockStruct(r, cx.tpl, info.pkey);
     flag('struct:lock');
     flag('struct:lock:' + info.pkey);
-    toast('🔒 Locked: authors can no longer change this component on pages.');
+    toast(`🔒 Locked: authors can no longer change this component on pages.${n ? ` Its ${kids(n)} moved back from Initial Content into the structure.` : ''}`);
   } else {
-    sn.props.editable = true;
-    if (!JCR.get(r, ip)) {
-      const copy = JCR.clone(sn);
-      delete copy.props.editable;
-      copy.name = JCR.name(ip);
-      JCR.put(r, JCR.parent(ip), copy);
-    }
+    const n = unlockStruct(r, cx.tpl, info.pkey);
     flag('struct:unlock');
     flag('struct:unlock:' + info.pkey);
-    toast('🔓 Unlocked: authors can now edit it on every page that uses this template.');
+    toast(`🔓 Unlocked: authors can now edit it on every page that uses this template.${n ? ` Its ${kids(n)} moved to <b>Initial Content</b>, where an unlocked container's starting content lives.` : ''}`);
   }
   markModified(cx.tpl + '/structure/x');
   commit();

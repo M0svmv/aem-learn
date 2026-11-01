@@ -11,18 +11,33 @@ const CF_TYPES = [
   ['reference', 'Content Reference', 'Image'],
   ['fragment-reference', 'Fragment Reference', 'DocumentFragment'],
   ['json', 'JSON Object', 'Code'],
+  ['tab', 'Tab Placeholder', 'Rail'],
 ];
 const cfTypeLabel = t => (CF_TYPES.find(x => x[0] === t) || [, t])[1];
 
 /* ---------- model helpers ---------- */
 
-function cfModels(r) {
-  const base = JCR.get(r, CFM_ROOT);
-  return (base ? base.children : []).filter(n => JCR.type(n) === 'cq:Template').map(n => {
-    const path = CFM_ROOT + '/' + n.name;
-    const c = JCR.get(n, 'jcr:content');
-    return { path, name: n.name, title: (c && c.props['jcr:title']) || n.name, status: (c && c.props.status) || 'enabled', desc: (c && c.props['jcr:description']) || '' };
-  });
+// Every configuration (/conf/<site>) has its own models folder
+const CFM_CONFS = [
+  { conf: 'wknd', title: 'WKND Sites Project', root: '/conf/wknd/settings/dam/cfm/models', dam: '/content/dam/wknd' },
+  { conf: 'mysite', title: 'My Site', root: '/conf/mysite/settings/dam/cfm/models', dam: '/content/dam/mysite' },
+];
+const confOfModel = p => CFM_CONFS.find(c => p.startsWith(c.root + '/')) || CFM_CONFS[0];
+// The configuration a DAM folder uses (the folder's Cloud Configuration in real AEM)
+const confOfDam = p => CFM_CONFS.find(c => p === c.dam || p.startsWith(c.dam + '/')) || CFM_CONFS[0];
+
+function cfModels(r, conf) {
+  const out = [];
+  for (const c of CFM_CONFS) {
+    if (conf && c.conf !== conf) continue;
+    const base = JCR.get(r, c.root);
+    for (const n of base ? base.children : []) {
+      if (JCR.type(n) !== 'cq:Template') continue;
+      const jc = JCR.get(n, 'jcr:content');
+      out.push({ path: c.root + '/' + n.name, name: n.name, conf: c.conf, title: (jc && jc.props['jcr:title']) || n.name, status: (jc && jc.props.status) || 'enabled', desc: (jc && jc.props['jcr:description']) || '' });
+    }
+  }
+  return out;
 }
 
 function cfFieldsNode(r, modelPath) {
@@ -63,13 +78,15 @@ function cfmScreen() {
     ? selectionBar(`${qa('cfmOpen', 'Edit', 'Edit', 'e')}
         ${sel.status === 'enabled' ? qa('cfmStatus', 'RemoveCircle', 'Disable', '', 'data-s="disabled"') : qa('cfmStatus', 'CheckmarkCircle', 'Enable', '', 'data-s="enabled"')}
         ${qa('cfmPublish', 'PublishCheck', 'Publish')}${qa('cfmDelete', 'Delete', 'Delete', 'backspace')}`, 'cfmUncheck')
-    : titleBar('', '<span class="tb-crumb">WKND Sites Project</span>', '<button class="btn primary" data-act="cfmCreate">Create</button>');
-  return shell('Content Fragment Models', `${bar}
-    <div class="agrid">${models.map(m => `<div class="acard ${sel && sel.path === m.path ? 'sel' : ''}" data-act="cfmSel" data-path="${esc(m.path)}" data-dbl="cfmOpenPath" title="${esc(m.path)}">
+    : titleBar('', '<span class="tb-crumb">Content Fragment Models</span>', '<button class="btn primary" data-act="cfmCreate">Create</button>');
+  const card = m => `<div class="acard ${sel && sel.path === m.path ? 'sel' : ''}" data-act="cfmSel" data-path="${esc(m.path)}" data-dbl="cfmOpenPath" title="${esc(m.path)}">
       <div class="athumb tpl-thumb">${icon('Table', 48)}<i class="ci-check">${icon('Checkmark', 12)}</i></div>
       <div class="acard-info"><b>${esc(m.title)}</b><small><span class="status-dot ${m.status === 'enabled' ? 'green' : ''}"></span>${m.status === 'enabled' ? 'Enabled' : 'Disabled'} · ${cfFields(r, m.path).length} field(s) · ${used(m)} fragment(s)</small>
-      <small>${JCR.get(PR(), m.path) ? 'Published' : 'Not published'}</small></div></div>`).join('')}</div>
-    <p class="hint pad">Models live in <code>${CFM_ROOT}</code>. Each model becomes a GraphQL type — try the <a href="#" data-act="go" data-url="${GRAPHIQL_URL}">GraphQL Query Editor</a>.</p>`);
+      <small>${JCR.get(PR(), m.path) ? 'Published' : 'Not published'}</small></div></div>`;
+  return shell('Content Fragment Models', `${bar}
+    ${CFM_CONFS.map(c => `<div class="cfm-conf"><h3>${icon('Folder', 18)} ${esc(c.title)} <code>${esc(c.root)}</code></h3>
+      <div class="agrid">${models.filter(m => m.conf === c.conf).map(card).join('') || '<p class="muted">No models.</p>'}</div></div>`).join('')}
+    <p class="hint pad">Models live in <code>/conf/&lt;site&gt;/settings/dam/cfm/models</code>. Each model becomes a GraphQL type — try the <a href="#" data-act="go" data-url="${GRAPHIQL_URL}">GraphQL Query Editor</a>.</p>`);
 }
 
 A.cfmSel = d => {
@@ -106,14 +123,15 @@ A.cfmDelete = () => {
 A.cfmCreate = () => openModal({
   title: 'Create Model',
   okLabel: 'Create',
-  body: `${field('Model Title *', 'title', '')}<label class="field"><span>Description</span><textarea name="desc"></textarea></label>`,
+  body: `${selectField('Configuration', 'conf', 'wknd', CFM_CONFS.map(c => [c.conf, c.title]))}${field('Model Title *', 'title', '')}<label class="field"><span>Description</span><textarea name="desc"></textarea></label>`,
   ok: b => {
     const f = formData(b);
     if (!f.title.trim()) { toast('Title is required.', 'error'); return false; }
     const r = AR();
-    const base = JCR.ensure(r, CFM_ROOT, 'sling:Folder');
+    const root = (CFM_CONFS.find(c => c.conf === f.conf) || CFM_CONFS[0]).root;
+    const base = JCR.ensure(r, root, 'sling:Folder');
     const name = JCR.unique(base, slug(f.title));
-    const path = CFM_ROOT + '/' + name;
+    const path = root + '/' + name;
     base.children.push(JCR.node(name, { 'jcr:primaryType': 'cq:Template' }, [
       JCR.node('jcr:content', { 'jcr:title': f.title.trim(), 'jcr:description': f.desc || '', status: 'enabled', 'sling:resourceType': 'dam/cfm/models/console/components/data/entity/default', 'cq:lastModified': now() }),
     ]));
@@ -130,14 +148,15 @@ function cfmEditor(modelPath) {
   const c = pcOf(r, modelPath);
   if (!c) return notFoundShell(modelPath);
   const fields = cfFields(r, modelPath);
+  if (modelPath.startsWith('/conf/mysite/')) flag('cfm:open:mysite');
   return shell('Content Fragment Model Editor', `${titleBar(`<button class="iconbtn" data-act="go" data-url="${CFM_URL}" title="Back to models">${icon('ChevronLeft')}</button>`,
       `<span class="tb-crumb">${esc(c.props['jcr:title'])}</span><span class="muted small">${esc(modelPath)}</span>`,
       `<button class="btn primary" data-act="go" data-url="${CFM_URL}">Done</button>`)}
     <div class="cfm-ed">
       <div class="cfm-form">
-        ${fields.map((f, i) => `<div class="cfm-field">
+        ${fields.map((f, i) => `<div class="cfm-field ${f.metaType === 'tab' ? 'cfm-tab' : ''}">
           <span class="cfm-ico">${icon((CF_TYPES.find(t => t[0] === f.metaType) || [, , 'Text'])[2])}</span>
-          <div class="cfm-f-txt"><b>${esc(f.fieldLabel || f.name)}${f.required ? ' *' : ''}</b><small>${esc(cfTypeLabel(f.metaType))} · property name <code>${esc(f.name)}</code>${f.options ? ' · ' + esc([].concat(f.options).join(', ')) : ''}</small></div>
+          <div class="cfm-f-txt"><b>${esc(f.fieldLabel || f.name)}${f.required ? ' *' : ''}</b><small>${f.metaType === 'tab' ? 'Tab Placeholder · starts a tab in the fragment editor' : `${esc(cfTypeLabel(f.metaType))}${f.multiple ? ' (multiple)' : ''} · property name <code>${esc(f.name)}</code>`}${f.options ? ' · ' + esc([].concat(f.options).join(', ')) : ''}</small></div>
           <button class="iconbtn" data-act="cfmFieldEdit" data-m="${esc(modelPath)}" data-id="${esc(f.id)}" title="Properties">${icon('Edit')}</button>
           <button class="iconbtn" data-act="cfmFieldMove" data-m="${esc(modelPath)}" data-i="${i}" data-dir="-1" title="Up">${icon('ArrowUp')}</button>
           <button class="iconbtn" data-act="cfmFieldMove" data-m="${esc(modelPath)}" data-i="${i}" data-dir="1" title="Down">${icon('ArrowDown')}</button>
@@ -145,7 +164,7 @@ function cfmEditor(modelPath) {
       </div>
       <div class="cfm-side"><div class="cfm-side-h">Data Types</div>
         ${CF_TYPES.map(([t, l, ic]) => `<a href="#" class="cfm-type" data-act="cfmFieldAdd" data-m="${esc(modelPath)}" data-t="${t}">${icon(ic)}${l}</a>`).join('')}
-        <p class="hint">Click a type to add a field. Each field becomes a property on the fragment and a field in GraphQL.</p></div>
+        <p class="hint">Click a type to add a field. Each field becomes a property on the fragment and a field in GraphQL. A <b>Tab Placeholder</b> groups the fields after it into a tab.</p></div>
     </div>`);
 }
 
@@ -154,26 +173,42 @@ function cfmFieldDialog(modelPath, f, isNew) {
   const models = cfModels(r);
   openModal({
     title: `${isNew ? 'Add' : 'Edit'} field <small>${esc(cfTypeLabel(f.metaType))}</small>`,
-    body: `${field('Field Label', 'fieldLabel', f.fieldLabel || '')}${field('Property Name', 'name', f.name || '', 'Used in the JCR and in GraphQL (letters and digits only)')}
+    body: f.metaType === 'tab' ? `${field('Tab Label', 'fieldLabel', f.fieldLabel || '')}<p class="hint">Every field after this placeholder (until the next one) shows in this tab of the fragment editor.</p>`
+      : `${field('Field Label', 'fieldLabel', f.fieldLabel || '')}${field('Property Name', 'name', f.name || '', 'Used in the JCR and in GraphQL (letters and digits only)')}
       <label class="check"><input type="checkbox" name="required" ${f.required ? 'checked' : ''}> Required</label>
+      ${['text-single', 'fragment-reference', 'reference'].includes(f.metaType) ? `<label class="check"><input type="checkbox" name="multiple" ${f.multiple ? 'checked' : ''}> Render as multiple field</label>` : ''}
       ${f.metaType === 'enumeration' ? field('Options', 'options', [].concat(f.options || []).join(', '), 'Comma separated') : ''}
-      ${f.metaType === 'fragment-reference' ? selectField('Allowed model', 'fragmentModel', f.fragmentModel || (models[0] && models[0].path), models.map(m => [m.path, m.title])) : ''}`,
+      ${f.metaType === 'fragment-reference' ? selectField('Allowed model', 'fragmentModel', f.fragmentModel || '', [['', 'Any model'], ...models.map(m => [m.path, `${m.title} (${m.conf})`])]) : ''}
+      ${f.metaType === 'fragment-reference' || f.metaType === 'text-single' ? field('Placeholder', 'emptyText', f.emptyText || '') : ''}`,
     onMount: b => {
       const l = b.querySelector('[name=fieldLabel]');
       const n = b.querySelector('[name=name]');
+      if (!n) return;
       l.addEventListener('input', () => { if (!n.dataset.touched && isNew) n.value = camel(slug(l.value)); });
       n.addEventListener('input', () => { n.dataset.touched = '1'; });
     },
     ok: b => {
       const v = formData(b);
+      const items = cfFieldsNode(r, modelPath);
+      if (f.metaType === 'tab') {
+        if (!String(v.fieldLabel || '').trim()) { toast('Give the tab a label.', 'error'); return false; }
+        const props = { metaType: 'tab', name: f.name || JCR.unique(items, 'tab'), fieldLabel: v.fieldLabel.trim() };
+        if (isNew) items.children.push(JCR.node(JCR.unique(items, 'f'), props));
+        else JCR.get(items, f.id).props = props;
+        pcOf(r, modelPath).props['cq:lastModified'] = now();
+        flag('cfm:field');
+        commit();
+        return;
+      }
       const name = String(v.name || camel(slug(v.fieldLabel))).replace(/[^A-Za-z0-9_]/g, '');
       if (!name || /^\d/.test(name)) { toast('Property name must start with a letter.', 'error'); return false; }
-      const items = cfFieldsNode(r, modelPath);
       if (items.children.some(c => c.props.name === name && c.name !== f.id)) { toast('Another field uses that property name.', 'error'); return false; }
       const props = { metaType: f.metaType, name, fieldLabel: v.fieldLabel || name, valueType: f.metaType === 'number' ? 'long' : f.metaType === 'boolean' ? 'boolean' : 'string' };
       if (v.required) props.required = true;
       if (f.metaType === 'enumeration') props.options = String(v.options || '').split(',').map(s => s.trim()).filter(Boolean);
-      if (f.metaType === 'fragment-reference') props.fragmentModel = v.fragmentModel;
+      if (f.metaType === 'fragment-reference' && v.fragmentModel) props.fragmentModel = v.fragmentModel;
+      if (v.multiple) props.multiple = true;
+      if (v.emptyText) props.emptyText = v.emptyText;
       if (f.metaType === 'reference') props.rootPath = '/content/dam';
       if (isNew) items.children.push(JCR.node(JCR.unique(items, 'f'), props));
       else JCR.get(items, f.id).props = { ...props };
@@ -203,7 +238,7 @@ A.cfmFieldMove = d => {
 
 A.cfCreate = d => {
   const r = AR();
-  const models = cfModels(r).filter(m => m.status === 'enabled');
+  const models = cfModels(r, confOfDam(d.path).conf).filter(m => m.status === 'enabled');
   if (!models.length) { toast('No enabled Content Fragment Model. Create one in Tools → Assets → Content Fragment Models.', 'warn'); return; }
   openModal({
     title: `New Content Fragment <small>${esc(d.path)}</small>`,
@@ -229,63 +264,330 @@ A.cfCreate = d => {
   });
 };
 
+/* ---------- Content Fragment editor (the AEM Assets CF editor: variations rail, open-fragment tabs, model tabs) ---------- */
+
+// The fragment's values as the editor shows them: unsaved edits live in a draft per fragment
+function cfDraft(r, path) {
+  S.ui.cfDrafts = S.ui.cfDrafts || {};
+  if (!S.ui.cfDrafts[path]) S.ui.cfDrafts[path] = JSON.parse(JSON.stringify((JCR.get(r, path + '/jcr:content/data/master') || { props: {} }).props));
+  return S.ui.cfDrafts[path];
+}
+
+function cfDirty(r, path) {
+  const d = S.ui.cfDrafts && S.ui.cfDrafts[path];
+  if (!d) return false;
+  const m = (JCR.get(r, path + '/jcr:content/data/master') || { props: {} }).props;
+  const fields = cfFields(r, cfModelOf(r, path)).filter(f => f.metaType !== 'tab');
+  const norm = v => JSON.stringify(v === '' || v == null || (Array.isArray(v) && !v.filter(x => x !== '').length) ? null : Array.isArray(v) ? v.filter(x => x !== '') : v);
+  return fields.some(f => norm(d[f.name]) !== norm(m[f.name]));
+}
+
+// Model fields grouped by Tab Placeholders: [{ label, fields }]
+function cfTabs(fields) {
+  const tabs = [];
+  for (const f of fields) {
+    if (f.metaType === 'tab') tabs.push({ label: f.fieldLabel || 'Tab', fields: [] });
+    else {
+      if (!tabs.length) tabs.push({ label: null, fields: [] });
+      tabs[tabs.length - 1].fields.push(f);
+    }
+  }
+  return tabs.filter(t => t.label || t.fields.length);
+}
+
+function cfFieldHtml(r, path, f, v) {
+  const label = `${esc(f.fieldLabel || f.name)}${f.required ? ' *' : ''}`;
+  const attr = (i, extra) => `data-cff="${esc(f.name)}" ${i != null ? `data-i="${i}"` : ''} ${extra || ''}`;
+  const rows = f.multiple ? [].concat(v == null || v === '' ? [] : v) : [v == null ? '' : v];
+  if (f.multiple && !rows.length) rows.push('');
+  switch (f.metaType) {
+    case 'text-multi': return `<label class="field"><span>${label}</span><textarea ${attr()} rows="5">${esc(v || '')}</textarea><small>Multi line text (an empty line starts a new paragraph)</small></label>`;
+    case 'number': return `<label class="field"><span>${label}</span><input type="number" ${attr()} value="${esc(v != null ? v : '')}"></label>`;
+    case 'boolean': return `<label class="check"><input type="checkbox" ${attr()} ${v === true || v === 'true' ? 'checked' : ''}> ${label}</label>`;
+    case 'date': return `<label class="field"><span>${label}</span><input type="datetime-local" ${attr()} value="${esc(v || '')}"></label>`;
+    case 'enumeration': return `<label class="field"><span>${label}</span><select ${attr()}>${[['', '(none)'], ...[].concat(f.options || []).map(o => [o, o])].map(([o, t]) => `<option value="${esc(o)}" ${String(v || '') === o ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label>`;
+    case 'tags': return `<label class="field"><span>${label}</span><input ${attr()} value="${esc([].concat(v || []).join(', '))}"><small>Comma separated tags</small></label>`;
+    case 'json': return `<label class="field"><span>${label}</span><textarea ${attr()} rows="4" class="mono">${esc(typeof v === 'string' ? v : JSON.stringify(v || {}, null, 2))}</textarea></label>`;
+    case 'reference':
+    case 'fragment-reference': {
+      const frag = f.metaType === 'fragment-reference';
+      const row = (x, i) => {
+        const ok = x && JCR.get(r, x);
+        const src = !frag && ok && !isCF(r, x) ? assetSrc(r, x) : '';
+        return `<div class="cfe-ref">
+          <div class="cfe-ref-row"><input ${attr(i)} value="${esc(x || '')}" placeholder="${esc(f.emptyText || (frag ? 'Select a content fragment' : 'Select an asset'))}" spellcheck="false">
+            <button class="cfe-ic" data-act="cfRefPick" data-f="${esc(f.name)}" data-i="${i}" title="Open selection dialog">${icon('SelectBoxAll', 16)}</button>
+            ${f.multiple ? `<button class="cfe-ic" data-act="cfRefDel" data-f="${esc(f.name)}" data-i="${i}" title="Remove">${icon('Delete', 16)}</button>
+            <button class="cfe-ic" data-act="cfRefMove" data-f="${esc(f.name)}" data-i="${i}" data-dir="-1" title="Move up" ${i ? '' : 'disabled'}>${icon('ArrowUp', 14)}</button>
+            <button class="cfe-ic" data-act="cfRefMove" data-f="${esc(f.name)}" data-i="${i}" data-dir="1" title="Move down" ${i < rows.length - 1 ? '' : 'disabled'}>${icon('ArrowDown', 14)}</button>` : ''}</div>
+          ${x && !ok ? `<small class="cfe-bad">${icon('Alert', 12)} Nothing exists at this path</small>` : ''}
+          ${frag && ok && isCF(r, x) ? `<button class="btn quiet cfe-edit" data-act="cfRefEdit" data-p="${esc(x)}">${icon('Edit', 14)} Edit Content Fragment</button>` : ''}
+          ${src ? `<img class="cf-ref" src="${src}" alt="">` : ''}</div>`;
+      };
+      return `<div class="field cfe-refs"><span>${label}</span><div class="cfe-ref-box">${rows.map(row).join('')}
+          ${f.multiple ? `<button class="btn outline small" data-act="cfRefAdd" data-f="${esc(f.name)}">Add</button>` : ''}</div>
+        ${frag ? `<button class="btn outline cfe-new" data-act="cfRefNew" data-f="${esc(f.name)}">${icon('Add', 14)} New Content Fragment</button>` : ''}</div>`;
+    }
+    default:
+      if (f.multiple) {
+        return `<div class="field"><span>${label}</span>${rows.map((x, i) => `<div class="cfe-ref-row"><input ${attr(i)} value="${esc(x || '')}" placeholder="${esc(f.emptyText || '')}">
+          <button class="cfe-ic" data-act="cfRefDel" data-f="${esc(f.name)}" data-i="${i}" title="Remove">${icon('Delete', 16)}</button></div>`).join('')}
+          <button class="btn outline small" data-act="cfRefAdd" data-f="${esc(f.name)}">Add</button></div>`;
+      }
+      return `<label class="field"><span>${label}</span><input ${attr()} value="${esc(v || '')}" placeholder="${esc(f.emptyText || '')}"></label>`;
+  }
+}
+
 function cfEditor(path) {
   const r = AR();
   const model = cfModelOf(r, path);
   const fields = model ? cfFields(r, model) : [];
-  const master = JCR.get(r, path + '/jcr:content/data/master') || { props: {} };
-  const v = master.props;
-  const assets = JCR.find(r, '/content/dam', (n, p) => JCR.type(n) === 'dam:Asset' && !isCF(r, p)).map(x => x.path);
-  const input = f => {
-    const val = v[f.name];
-    const name = `cf:${f.name}`;
-    switch (f.metaType) {
-      case 'text-multi': return `<label class="field"><span>${esc(f.fieldLabel)}${f.required ? ' *' : ''}</span><textarea name="${esc(name)}" rows="5">${esc(val || '')}</textarea><small>Multi line text (plain text; an empty line starts a new paragraph)</small></label>`;
-      case 'number': return field(esc(f.fieldLabel) + (f.required ? ' *' : ''), name, val != null ? val : '', '', 'number');
-      case 'boolean': return `<label class="check"><input type="checkbox" name="${esc(name)}" ${val === true || val === 'true' ? 'checked' : ''}> ${esc(f.fieldLabel)}</label>`;
-      case 'date': return field(esc(f.fieldLabel), name, val || '', '', 'datetime-local');
-      case 'enumeration': return selectField(esc(f.fieldLabel) + (f.required ? ' *' : ''), name, val || '', [['', '(none)'], ...[].concat(f.options || []).map(o => [o, o])]);
-      case 'reference': return `${selectField(esc(f.fieldLabel), name, val || '', [['', '(none)'], ...assets.map(a => [a, a])])}${val && assetSrc(r, val) ? `<img class="cf-ref" src="${assetSrc(r, val)}" alt="">` : ''}`;
-      case 'fragment-reference': return selectField(esc(f.fieldLabel), name, val || '', [['', '(none)'], ...allCFs(r, f.fragmentModel).map(p => [p, p])]);
-      case 'tags': return field(esc(f.fieldLabel), name, [].concat(val || []).join(', '), 'Comma separated tags');
-      case 'json': return `<label class="field"><span>${esc(f.fieldLabel)}</span><textarea name="${esc(name)}" rows="4" class="mono">${esc(typeof val === 'string' ? val : JSON.stringify(val || {}, null, 2))}</textarea></label>`;
-      default: return field(esc(f.fieldLabel) + (f.required ? ' *' : ''), name, val || '');
-    }
-  };
-  const folder = JCR.parent(path);
-  return shell('Content Fragment', `${titleBar(`<button class="iconbtn" data-act="go" data-url="/assets.html${esc(folder)}" title="Close">${icon('ChevronLeft')}</button>`,
-      `<span class="tb-crumb">${esc(titleOf(r, path))}</span><span class="muted small">${esc(path)}</span>`,
-      `<button class="btn quiet" data-act="go" data-url="/assets.html${esc(folder)}">Cancel</button><button class="btn primary" data-act="cfSave" data-path="${esc(path)}">Save</button>`)}
-    <div class="cf-ed">
-      <div class="cf-side"><div class="cfm-side-h">Variations</div><div class="cf-var on">${icon('DocumentFragment')} Master</div>
-        <div class="cfm-side-h">Model</div><div class="muted small">${esc(model ? titleOf(r, model) : '(no model)')}<br><code>${esc(model || '')}</code></div>
-        <p class="hint">Stored at <code>${esc(path)}/jcr:content/data/master</code></p></div>
-      <form class="cf-form" id="cf-form" onsubmit="return false">${fields.map(input).join('') || '<p class="muted">This model has no fields.</p>'}</form>
-    </div>`);
+  const draft = cfDraft(r, path);
+  S.ui.cfOpen = (S.ui.cfOpen || []).filter(p => isCF(r, p));
+  if (!S.ui.cfOpen.includes(path)) S.ui.cfOpen.push(path);
+  S.ui.cfTab = S.ui.cfTab || {};
+  const tabs = cfTabs(fields);
+  const ti = Math.min(S.ui.cfTab[path] || 0, Math.max(tabs.length - 1, 0));
+  const tab = tabs[ti] || { fields: [] };
+  if (tab.label && confOfModel(model).conf === 'mysite') flag('cfe:tab:' + slug(tab.label));
+  if (model && model.endsWith('/page') && path.startsWith('/content/dam/mysite/')) flag('cfe:open:page');
+  const c = JCR.get(r, path + '/jcr:content') || { props: {} };
+  const pubNode = JCR.get(PR(), path);
+  const pc = pubNode && JCR.get(pubNode, 'jcr:content');
+  const pubWhen = c.props['cq:lastReplicated'] || (pc && pc.props['jcr:lastModified']);
+  const status = pubNode ? `Published ${fmtDate(pubWhen)} by ${esc(c.props['cq:lastReplicatedBy'] || 'admin')}` : 'Not published';
+  const banner = pubNode && !(S.ui.cfBannerOff || {})[path];
+
+  return shell('Content Fragment', `<div class="cfe">
+    <div class="cfe-rail">${['Edit', 'Annotate', 'Folder', 'Info', 'Layers', 'Search'].map((ic, i) => `<span class="cfe-rail-i ${i ? '' : 'on'}" title="${i ? 'Not simulated in the lab' : 'Variations'}">${icon(ic, 18)}</span>`).join('')}</div>
+    <div class="cfe-vars"><div class="cfe-vars-h">Variations</div>
+      <button class="btn outline cfe-wide" title="Not simulated in the lab" disabled>Create Variation</button>
+      <div class="cfe-var on">${icon('Visibility', 16)} Master</div>
+      <label class="field"><span>Tags</span><input disabled placeholder=""></label>
+      <p class="hint">Saved at <code>${esc(path)}/jcr:content/data/master</code></p></div>
+    <div class="cfe-main">
+      <div class="cfe-open">${S.ui.cfOpen.map(p => `<a href="#" class="${p === path ? 'on' : ''}" data-act="go" data-url="/editor.html${esc(p)}">${esc(titleOf(r, p))}${cfDirty(r, p) ? ' •' : ''}<span class="cfe-x" data-act="cfCloseTab" data-p="${esc(p)}" title="Close">✕</span></a>`).join('')}</div>
+      <div class="cfe-bar"><span class="cfe-status">${icon('RailLeft', 16)} ${status}</span>
+        <div class="cfe-title"><b>${esc(titleOf(r, path))}</b><a href="#" data-act="go" data-url="${CFM_EDITOR}${esc(model || '')}">${esc(model ? titleOf(r, model) : '(no model)')}</a></div>
+        <div class="cfe-acts"><button class="btn outline" data-act="cfClose" data-p="${esc(path)}">Close</button>
+          <span class="cfe-save"><button class="btn primary" data-act="cfSave" data-path="${esc(path)}">Save</button><details class="dd right"><summary class="btn primary cfe-caret">${icon('ChevronDown', 10)}</summary>
+            <div class="dd-menu"><a href="#" data-act="cfSave" data-path="${esc(path)}" data-close="1">Save &amp; Close</a></div></details></span>
+          <details class="dd right"><summary class="iconbtn" title="More">${icon('More')}</summary><div class="dd-menu">
+            ${model && model.endsWith('/page') && path.includes('/cf/page/') ? `<a href="#" data-act="cfPreview" data-p="${esc(path)}">Preview on the frontend</a>` : ''}
+            <a href="#" data-act="cfPublishPath" data-p="${esc(path)}">Publish</a>
+            <a href="#" data-act="go" data-url="/assets.html${esc(path)}">Show in Assets</a></div></details></div></div>
+      ${banner ? `<div class="cfe-banner">${icon('Info', 14)} This content fragment has already been published.<a href="#" data-act="cfBannerOff" data-p="${esc(path)}">Close</a></div>` : ''}
+      ${tabs.length > 1 || (tabs[0] && tabs[0].label) ? `<div class="cfe-tabs">${tabs.map((t, i) => `<a href="#" class="${i === ti ? 'on' : ''}" data-act="cfTabSet" data-p="${esc(path)}" data-i="${i}">${esc(t.label || 'Main')}</a>`).join('')}</div>` : ''}
+      <form class="cf-form cfe-form" id="cf-form" data-path="${esc(path)}" onsubmit="return false">${tab.fields.map(f => cfFieldHtml(r, path, f, draft[f.name])).join('') || '<p class="muted">This model has no fields.</p>'}</form>
+    </div></div>`);
+}
+
+// typing in the editor updates the draft without re-rendering
+function cfInput(e) {
+  const el = e.target.closest && e.target.closest('[data-cff]');
+  const form = el && el.closest('#cf-form');
+  if (!form) return;
+  const path = form.dataset.path;
+  const r = AR();
+  const f = cfFields(r, cfModelOf(r, path)).find(x => x.name === el.dataset.cff);
+  if (!f) return;
+  const d = cfDraft(r, path);
+  let val = el.type === 'checkbox' ? el.checked : el.value;
+  if (f.metaType === 'number') val = val === '' ? null : Number(val);
+  if (f.metaType === 'tags') val = String(val).split(',').map(x => x.trim()).filter(Boolean);
+  if (el.dataset.i != null && f.multiple) {
+    const arr = [].concat(d[f.name] == null || d[f.name] === '' ? [] : d[f.name]);
+    while (arr.length <= +el.dataset.i) arr.push('');
+    arr[+el.dataset.i] = val;
+    d[f.name] = arr;
+  } else d[f.name] = val;
+  const tab = document.querySelector('.cfe-open a.on');
+  if (tab && !tab.textContent.includes('•')) tab.firstChild.textContent += ' •';
+}
+document.addEventListener('input', cfInput);
+document.addEventListener('change', cfInput);
+
+const cfField = (path, name) => cfFields(AR(), cfModelOf(AR(), path)).find(f => f.name === name);
+const cfCur = () => document.getElementById('cf-form') && document.getElementById('cf-form').dataset.path;
+function cfList(path, name) {
+  const d = cfDraft(AR(), path);
+  return [].concat(d[name] == null || d[name] === '' ? [] : d[name]);
+}
+
+A.cfTabSet = d => {
+  S.ui.cfTab[d.p] = +d.i;
+  commit();
+};
+A.cfBannerOff = d => {
+  S.ui.cfBannerOff = { ...(S.ui.cfBannerOff || {}), [d.p]: 1 };
+  commit();
+};
+A.cfRefAdd = d => {
+  const p = cfCur();
+  const list = cfList(p, d.f);
+  list.push('');
+  cfDraft(AR(), p)[d.f] = list;
+  commit();
+};
+A.cfRefDel = d => {
+  const p = cfCur();
+  const list = cfList(p, d.f);
+  list.splice(+d.i, 1);
+  cfDraft(AR(), p)[d.f] = list;
+  commit();
+};
+A.cfRefMove = d => {
+  const p = cfCur();
+  const list = cfList(p, d.f);
+  const i = +d.i;
+  const j = i + +d.dir;
+  if (j < 0 || j >= list.length) return;
+  [list[i], list[j]] = [list[j], list[i]];
+  cfDraft(AR(), p)[d.f] = list;
+  flag('cfe:reordered');
+  commit();
+};
+A.cfRefEdit = d => go('/editor.html' + d.p);
+
+// Select Path: the column picker, starting where the project keeps that kind of item
+A.cfRefPick = d => {
+  const r = AR();
+  const p = cfCur();
+  const f = cfField(p, d.f);
+  const frag = f.metaType === 'fragment-reference';
+  const cur = f.multiple ? cfList(p, d.f)[+d.i] : cfDraft(r, p)[d.f];
+  const conf = confOfDam(p);
+  const compRoot = conf.dam + '/corporate/cf/comp/' + ((p.match(/\/cf\/page\/([^/]+)\//) || [])[1] || 'en');
+  const start = cur && JCR.get(r, JCR.parent(cur)) ? JCR.parent(cur) : frag ? (JCR.get(r, compRoot) ? compRoot : JCR.parent(p)) : conf.dam;
+  openPathPicker({
+    root: '/content/dam',
+    start,
+    title: 'Select Path',
+    selectable: x => (frag ? isCF(r, x) && (!f.fragmentModel || cfModelOf(r, x) === f.fragmentModel) : isDamAsset(r, x) && !isCF(r, x)),
+    onSelect: ([x]) => {
+      const draft = cfDraft(r, p);
+      if (f.multiple) { const list = cfList(p, d.f); list[+d.i] = x; draft[d.f] = list; } else draft[d.f] = x;
+      flag('cfe:picked');
+      commit();
+    },
+  });
+};
+
+// New Content Fragment from a reference field: created in the project's folder convention and referenced right away
+A.cfRefNew = d => {
+  const r = AR();
+  const p = cfCur();
+  const f = cfField(p, d.f);
+  const conf = confOfDam(p);
+  const models = cfModels(r, conf.conf).filter(m => m.status === 'enabled' && (!f.fragmentModel || m.path === f.fragmentModel) && !m.path.endsWith('/page'))
+    // component models first; header and footer have their own tabs
+    .sort((a, b) => /\/(header|footer)$/.test(a.path) - /\/(header|footer)$/.test(b.path));
+  if (!models.length) { toast('No model is allowed for this field.', 'warn'); return; }
+  const page = (p.match(/\/cf\/page\/([^/]+)\/([^/]+)$/) || []);
+  const parentDefault = page[1] ? `${conf.dam}/corporate/cf/comp/${page[1]}/${page[2]}` : JCR.parent(p);
+  openModal({
+    title: 'New Content Fragment',
+    okLabel: 'Create',
+    body: `${selectField('Model', 'model', models[0].path, models.map(m => [m.path, m.title]))}${field('Title *', 'title', '')}
+      ${field('Parent folder', 'parent', parentDefault, 'Created if it does not exist yet')}
+      <label class="check"><input type="checkbox" name="own" checked> Put it in its own folder (<code>…/&lt;name&gt;/&lt;name&gt;</code>, the project convention)</label>`,
+    ok: b => {
+      const v = formData(b);
+      const title = v.title.trim();
+      if (!title) { toast('Title is required.', 'error'); return false; }
+      const name = title.toLowerCase().replace(/[^a-z0-9_]+/g, '-').replace(/^-+|-+$/g, '');
+      const parent = String(v.parent || '').trim().replace(/\/+$/, '');
+      if (!parent.startsWith('/content/dam/')) { toast('The parent folder must be under /content/dam.', 'error'); return false; }
+      const folder = v.own ? `${parent}/${name}` : parent;
+      const np = `${folder}/${name}`;
+      if (JCR.get(r, np)) { toast(`<code>${esc(np)}</code> already exists.`, 'error'); return false; }
+      ensureDamFolder(r, folder, title);
+      cfNode(r, np, title, v.model, {});
+      const draft = cfDraft(r, p);
+      if (f.multiple) draft[d.f] = [...cfList(p, d.f).filter(Boolean), np];
+      else draft[d.f] = np;
+      flag('cfe:newref');
+      toast(`Created <code>${esc(np)}</code> and added it. Save the page, then fill the new fragment.`);
+      commit();
+    },
+  });
+};
+
+function ensureDamFolder(r, path, title) {
+  let acc = '';
+  for (const s of JCR.segs(path)) {
+    const parent = JCR.get(r, acc || '/');
+    acc += '/' + s;
+    if (!JCR.get(r, acc)) parent.children.push(JCR.node(s, { 'jcr:primaryType': 'sling:Folder', ...(acc === path && title ? { 'jcr:title': title } : {}) }));
+  }
+}
+
+function cfNode(r, path, title, model, data) {
+  const parent = JCR.get(r, JCR.parent(path));
+  parent.children.push(JCR.node(JCR.name(path), { 'jcr:primaryType': 'dam:Asset' }, [
+    JCR.node('jcr:content', { 'jcr:primaryType': 'dam:AssetContent', contentFragment: true, 'jcr:title': title, 'jcr:lastModified': now(), 'jcr:lastModifiedBy': curUser() }, [
+      JCR.node('metadata', { 'dc:title': title, 'dc:format': 'text/html' }),
+      JCR.node('data', { 'cq:model': model }, [JCR.node('master', { 'jcr:primaryType': 'nt:unstructured', ...data })]),
+    ]),
+  ]));
 }
 
 A.cfSave = d => {
   const r = AR();
-  const form = document.getElementById('cf-form');
-  const model = cfModelOf(r, d.path);
-  const fields = cfFields(r, model);
-  const master = JCR.ensure(r, d.path + '/jcr:content/data/master');
-  for (const f of fields) {
-    const el = form.querySelector(`[name="${CSS.escape('cf:' + f.name)}"]`);
-    if (!el) continue;
-    let val = el.type === 'checkbox' ? el.checked : el.value;
-    if (f.metaType === 'number') val = val === '' ? null : Number(val);
-    if (f.metaType === 'tags') val = String(val).split(',').map(s => s.trim()).filter(Boolean);
-    if (f.required && (val === '' || val == null)) { toast(`<b>${esc(f.fieldLabel)}</b> is required.`, 'error'); return; }
-    if (val === '' || val == null) delete master.props[f.name];
-    else master.props[f.name] = val;
+  const path = d.path;
+  const model = cfModelOf(r, path);
+  const fields = cfFields(r, model).filter(f => f.metaType !== 'tab');
+  const draft = cfDraft(r, path);
+  const empty = v => v === '' || v == null || (Array.isArray(v) && !v.filter(x => x !== '').length);
+  const missing = fields.find(f => f.required && empty(draft[f.name]));
+  if (missing) {
+    const tabs = cfTabs(cfFields(r, model));
+    const ti = tabs.findIndex(t => t.fields.some(x => x.name === missing.name));
+    if (ti > -1) S.ui.cfTab[path] = ti;
+    toast(`<b>${esc(missing.fieldLabel)}</b> is required.`, 'error');
+    commit();
+    return;
   }
-  const c = JCR.get(r, d.path + '/jcr:content');
-  c.props['jcr:lastModified'] = now();
-  if (master.props.title) { c.props['jcr:title'] = master.props.title; JCR.ensure(r, d.path + '/jcr:content/metadata').props['dc:title'] = master.props.title; }
+  const master = JCR.ensure(r, path + '/jcr:content/data/master');
+  for (const f of fields) {
+    let v = draft[f.name];
+    if (Array.isArray(v)) v = v.filter(x => x !== '');
+    if (empty(v)) delete master.props[f.name];
+    else master.props[f.name] = v;
+  }
+  const c = JCR.get(r, path + '/jcr:content');
+  Object.assign(c.props, { 'jcr:lastModified': now(), 'jcr:lastModifiedBy': curUser() });
+  // WKND fragments take their title from the Title field; project fragments keep their own name (C_007 - Hero)
+  const t = confOfModel(model).conf === 'wknd' && master.props.title;
+  if (t && typeof t === 'string') { c.props['jcr:title'] = t; JCR.ensure(r, path + '/jcr:content/metadata').props['dc:title'] = t; }
+  delete S.ui.cfDrafts[path];
   flag('cf:saved');
   toast('Content Fragment saved.');
-  commit();
+  if (d.close) A.cfClose({ p: path });
+  else commit();
+};
+
+function cfCloseTab(path, goAway) {
+  delete S.ui.cfDrafts[path];
+  const open = S.ui.cfOpen || [];
+  const i = open.indexOf(path);
+  S.ui.cfOpen = open.filter(p => p !== path);
+  if (!goAway) return commit();
+  const next = S.ui.cfOpen[Math.min(i, S.ui.cfOpen.length - 1)];
+  go(next ? '/editor.html' + next : '/assets.html' + JCR.parent(path));
+}
+
+A.cfClose = d => {
+  const r = AR();
+  if (cfDirty(r, d.p)) { confirmBox('Unsaved changes', `Close <b>${esc(titleOf(r, d.p))}</b> without saving?`, () => cfCloseTab(d.p, true), 'Discard'); return; }
+  cfCloseTab(d.p, true);
+};
+A.cfCloseTab = (d, el, e) => {
+  if (e) { e.preventDefault(); e.stopPropagation(); }
+  if (d.p === cfCur()) return A.cfClose(d);
+  const r = AR();
+  if (cfDirty(r, d.p)) { confirmBox('Unsaved changes', `Close <b>${esc(titleOf(r, d.p))}</b> without saving?`, () => cfCloseTab(d.p, false), 'Discard'); return; }
+  cfCloseTab(d.p, false);
 };
 
 /* ---------- GraphQL (a small subset of AEM's Content Fragment GraphQL API) ---------- */
@@ -369,7 +671,7 @@ const GQL = (() => {
   function schema(r) {
     const types = {};
     for (const m of cfModels(r).filter(x => x.status === 'enabled')) {
-      types[m.path] = { model: m, typeName: pascal(m.name) + 'Model', list: camel(m.name) + 'List', byPath: camel(m.name) + 'ByPath', fields: cfFields(r, m.path) };
+      types[m.path] = { model: m, typeName: pascal(m.name) + 'Model', list: camel(m.name) + 'List', byPath: camel(m.name) + 'ByPath', fields: cfFields(r, m.path).filter(x => x.metaType !== 'tab') };
     }
     return types;
   }
@@ -415,33 +717,36 @@ const GQL = (() => {
             out[key] = o;
           } else if (f.metaType === 'reference') {
             if (!s.sel) { err(`Validation error (SubselectionRequired@[${p.join('/')}]) : Sub selection required for type 'Reference' of field '${s.name}'`, p); continue; }
-            if (!v) { out[key] = null; continue; }
-            const refType = isCF(r, v) ? 'DocumentRef' : 'ImageRef';
-            const o = {};
-            const fields = [];
-            s.sel.forEach(ss => { if (ss.kind === 'frag') { if (ss.type === refType) fields.push(...ss.sel); } else fields.push(ss); });
-            const meta = JCR.get(r, v + '/jcr:content/metadata');
-            for (const ss of fields) {
-              const k = ss.alias || ss.name;
-              if (ss.name === '_path') o[k] = v;
-              else if (ss.name === '_publishUrl') o[k] = `http://localhost:${portOf('publish')}${v}`;
-              else if (ss.name === '_authorUrl') o[k] = `http://localhost:${portOf('author')}${v}`;
-              else if (ss.name === 'mimeType') o[k] = meta ? meta.props['dc:format'] : null;
-              else if (ss.name === '__typename') o[k] = refType;
-              else if (ss.name === 'width' || ss.name === 'height') o[k] = ss.name === 'width' ? 1200 : 600;
-              else err(`Field '${ss.name}' in type '${refType}' is undefined`, [...p, k]);
-            }
-            out[key] = o;
+            out[key] = f.multiple ? [].concat(v || []).filter(Boolean).map(x => assetRef(x, s, p)) : (v ? assetRef(v, s, p) : null);
           } else if (f.metaType === 'fragment-reference') {
             if (!s.sel) { err(`Sub selection required for fragment reference '${s.name}'`, p); continue; }
-            const refType = types[f.fragmentModel];
-            out[key] = v && refType && JCR.get(r, v) ? resolveCF(v, refType, s.sel, p) : null;
+            // each referenced fragment resolves with its own model, so a field can mix component types (use "... on HeroModel { }")
+            const one = x => { const t = x && JCR.get(r, x) && isCF(r, x) && types[cfModelOf(r, x)]; return t ? resolveCF(x, t, s.sel, p) : null; };
+            out[key] = f.multiple ? [].concat(v || []).filter(Boolean).map(one).filter(Boolean) : one(v);
           } else {
             if (s.sel) { err(`Validation error (SubselectionNotAllowed@[${p.join('/')}]) : Sub selection not allowed on leaf type of field '${s.name}'`, p); continue; }
-            out[key] = v === undefined ? null : f.metaType === 'tags' ? [].concat(v) : v;
+            out[key] = v === undefined ? null : f.metaType === 'tags' || f.multiple ? [].concat(v) : v;
           }
         }
       };
+      const assetRef = (v, s, p) => {
+        const refType = isCF(r, v) ? 'DocumentRef' : 'ImageRef';
+        const o = {};
+        const fields = [];
+        s.sel.forEach(ss => { if (ss.kind === 'frag') { if (ss.type === refType) fields.push(...ss.sel); } else fields.push(ss); });
+        const meta = JCR.get(r, v + '/jcr:content/metadata');
+        for (const ss of fields) {
+          const k = ss.alias || ss.name;
+          if (ss.name === '_path') o[k] = v;
+          else if (ss.name === '_publishUrl') o[k] = `http://localhost:${portOf('publish')}${v}`;
+          else if (ss.name === '_authorUrl') o[k] = `http://localhost:${portOf('author')}${v}`;
+          else if (ss.name === 'mimeType') o[k] = meta ? meta.props['dc:format'] : null;
+          else if (ss.name === '__typename') o[k] = refType;
+          else if (ss.name === 'width' || ss.name === 'height') o[k] = ss.name === 'width' ? 1200 : 600;
+          else err(`Field '${ss.name}' in type '${refType}' is undefined`, [...p, k]);
+        }
+        return o;
+  };
       apply(selection);
       return out;
     };
@@ -598,8 +903,8 @@ A.gqlDelete = d => {
 function persistedResult(r, path) {
   const m = path.match(/^\/graphql\/execute\.json\/([^/]+)\/([^/;?]+)/);
   if (!m) return { status: 404, body: { errors: [{ message: 'Use /graphql/execute.json/<configuration>/<query-name>' }] } };
-  const q = JCR.get(r, PQ_ROOT + '/' + m[2]);
-  if (m[1] !== 'wknd' || !q) return { status: 404, body: { errors: [{ message: `Persisted query not found: ${m[1]}/${m[2]}` }] } };
+  const q = CFM_CONFS.some(c => c.conf === m[1]) && JCR.get(r, `/conf/${m[1]}/settings/graphql/persistentQueries/${m[2]}`);
+  if (!q) return { status: 404, body: { errors: [{ message: `Persisted query not found: ${m[1]}/${m[2]}` }] } };
   return { status: 200, body: GQL.execute(r, q.props.query || '') };
 }
 

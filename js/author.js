@@ -24,7 +24,8 @@ function routeAuthor(url) {
   if (path === '/bin/querybuilder.json') return querybuilderJson('author', query);
   if (path.startsWith('/sites.html')) return sitesScreen(path.slice('/sites.html'.length) || '/content');
   if (path.startsWith('/aem/experience-fragments.html')) return sitesScreen(path.slice('/aem/experience-fragments.html'.length) || XF_ROOT);
-  if (path.startsWith(CFM_URL)) return cfmScreen();
+  if (path.startsWith('/libs/dam/cfm/models/console/content/models.html')) return cfmScreen();
+  if (path.startsWith('/frontend/')) return frontendRoute('author', path);
   if (path === '/libs/launches/content/launches.html') return launchesScreen();
   if (path === '/libs/msm/wcm/content/rolloutconfigs.html') return rolloutConfigsScreen();
   if (path.startsWith('/mnt/overlay/wcm/core/content/sites/createsitewizard.html')) return siteWizardScreen(path.slice('/mnt/overlay/wcm/core/content/sites/createsitewizard.html'.length));
@@ -75,7 +76,7 @@ function titleBar(left, title, right) {
 // Selection mode bar: quick actions on the left, "N selected ✕" on the right
 function selectionBar(actions, closeAct) {
   return `<div class="selbar"><div class="sel-actions">${actions}</div>
-    <div class="sel-right"><span>1 selected</span><button class="iconbtn" data-act="${closeAct}" title="Exit selection">${icon('Close')}</button></div></div>`;
+    <div class="sel-right"><span>1 selected <i>(escape)</i></span><button class="iconbtn sel-close" data-act="${closeAct}" title="Exit selection (Esc)">${icon('Close')}</button></div></div>`;
 }
 
 function qa(act, ico, label, key, extra) {
@@ -421,22 +422,28 @@ function previewCard(path) {
 function openPathPicker(opts) {
   const r = AR();
   const root = opts.root || '/content';
+  // inside the DAM the picker lists folders, assets and content fragments (Select Path in the CF editor)
+  const dam = root.startsWith('/content/dam');
   const types = root === '/content' ? FOLDERS : [...FOLDERS, 'nt:folder', 'nt:unstructured', 'cq:Template'];
   const st = { nav: JCR.get(r, opts.start) ? opts.start : root, sel: [], q: '' };
   const canSel = p => (opts.selectable ? opts.selectable(p) : isPage(r, p));
-  const kidsOf = p => childEntries(r, p, types).filter(x => x !== '/content/dam' && x !== LAUNCH_ROOT && !JCR.name(x).includes(':'));
+  const kidsOf = dam ? (p => damKids(r, p)) : (p => childEntries(r, p, types).filter(x => x !== '/content/dam' && x !== LAUNCH_ROOT && !JCR.name(x).includes(':')));
+  const ttl = p => (dam ? damTitle(r, p) : titleOf(r, p));
   const el = document.createElement('div');
   el.className = 'picker-backdrop';
   document.body.appendChild(el);
 
   const row = (p, active) => {
     const page = isPage(r, p);
-    const thumb = page && pageThumb(r, p);
+    const asset = dam && isDamAsset(r, p);
+    const cf = asset && isCF(r, p);
+    const thumb = page ? pageThumb(r, p) : asset && !cf ? assetSrc(r, p) : null;
     const checked = st.sel.includes(p);
     const sel = canSel(p);
-    return `<div class="ci ${active ? 'active' : ''} ${checked ? 'checked' : ''}" data-pk-nav="${esc(p)}" title="${esc(p)}">
-      <span class="ci-thumb ${thumb ? 'img' : ''} ${sel ? '' : 'nosel'}" ${sel ? `data-pk-sel="${esc(p)}"` : ''} ${thumb ? `style="background-image:url('${thumb}')"` : ''}>${thumb ? '' : icon(page ? 'WebPage' : 'Folder', 24)}<i class="ci-check">${icon('Checkmark', 12)}</i></span>
-      <span class="ci-text"><b>${esc(titleOf(r, p))}</b><small>${esc(JCR.name(p))}</small></span>
+    // a leaf (asset or fragment) is picked by clicking the row; folders open
+    return `<div class="ci ${active ? 'active' : ''} ${checked ? 'checked' : ''}" ${asset ? (sel ? `data-pk-sel="${esc(p)}"` : '') : `data-pk-nav="${esc(p)}"`} title="${esc(p)}">
+      <span class="ci-thumb ${thumb ? 'img' : ''} ${sel ? '' : 'nosel'}" ${sel ? `data-pk-sel="${esc(p)}"` : ''} ${thumb ? `style="background-image:url('${thumb}')"` : ''}>${thumb ? '' : icon(page ? 'WebPage' : cf ? 'DocumentFragment' : asset ? 'Image' : 'Folder', 24)}<i class="ci-check">${icon('Checkmark', 12)}</i></span>
+      <span class="ci-text"><b>${esc(ttl(p))}</b><small>${esc(JCR.name(p))}</small></span>
       ${kidsOf(p).length ? `<span class="ci-arrow">${icon('ChevronRight', 14)}</span>` : ''}</div>`;
   };
 
@@ -444,8 +451,10 @@ function openPathPicker(opts) {
     let body;
     if (st.q.trim()) {
       const q = st.q.trim().toLowerCase();
-      const hits = JCR.find(r, root, (n, p) => types.includes(JCR.type(n)) && !n.name.includes(':') && p !== root && !p.startsWith('/content/dam') && !p.startsWith(LAUNCH_ROOT)
-        && (titleOf(r, p).toLowerCase().includes(q) || n.name.toLowerCase().includes(q))).map(x => x.path).slice(0, 200);
+      const hits = dam
+        ? JCR.find(r, root, (n, p) => (DAM_FOLDERS.includes(JCR.type(n)) || JCR.type(n) === 'dam:Asset') && !p.includes('/jcr:content') && p !== root && (damTitle(r, p).toLowerCase().includes(q) || n.name.toLowerCase().includes(q))).map(x => x.path).slice(0, 200)
+        : JCR.find(r, root, (n, p) => types.includes(JCR.type(n)) && !n.name.includes(':') && p !== root && !p.startsWith('/content/dam') && !p.startsWith(LAUNCH_ROOT)
+          && (titleOf(r, p).toLowerCase().includes(q) || n.name.toLowerCase().includes(q))).map(x => x.path).slice(0, 200);
       body = `<div class="pk-results">${hits.map(p => row(p, false)).join('') || '<div class="pk-empty">No results</div>'}</div>`;
     } else {
       const cols = [];
@@ -460,10 +469,10 @@ function openPathPicker(opts) {
     let acc = '';
     for (const s of JCR.segs(st.nav)) { acc += '/' + s; crumbs.push(acc); }
     el.innerHTML = `<div class="picker">
-      <div class="pk-search">${icon('Search', 18)}<input placeholder="Type to search ..." value="${esc(st.q)}" data-pk-q="1"><span class="spacer"></span>
+      <div class="pk-search">${opts.title ? `<b class="pk-title">${esc(opts.title)}</b>` : ''}${icon('Search', 18)}<input placeholder="Type to search ..." value="${esc(st.q)}" data-pk-q="1"><span class="spacer"></span>
         <button class="pk-btn" data-pk="cancel">Cancel</button><button class="pk-btn primary" data-pk="select" ${st.sel.length ? '' : 'disabled'}>Select</button></div>
       <div class="pk-bar"><span class="pk-rail">${icon('RailLeft')}</span>
-        <details class="dd pk-crumb"><summary>${esc(titleOf(r, st.nav))} ${icon('ChevronDown', 10)}</summary><div class="dd-menu">${crumbs.slice().reverse().map(p => `<a href="#" data-pk-nav="${esc(p)}">${esc(titleOf(r, p))}</a>`).join('')}</div></details>
+        <details class="dd pk-crumb"><summary>${esc(ttl(st.nav))} ${icon('ChevronDown', 10)}</summary><div class="dd-menu">${crumbs.filter(p => p.length >= root.length).reverse().map(p => `<a href="#" data-pk-nav="${esc(p)}">${esc(ttl(p))}</a>`).join('')}</div></details>
         <span class="pk-count">${st.sel.length ? `<span class="pk-box">${st.sel.length} <a href="#" data-pk="clear" title="Clear selection">✕</a></span>` : ''}</span></div>
       ${body}</div>`;
     const input = el.querySelector('[data-pk-q]');
@@ -667,7 +676,7 @@ function cpwScreen(parent) {
           <h4 class="cpw-h">Title and Tags</h4>
           ${inp('Title *', 'title')}
           ${inp('Name', 'name', `placeholder="${esc(f.title ? slug(f.title) : '')}"`)}
-          ${inp('Tags', 'tags', 'placeholder="e.g. wknd:activity/hiking, wknd:region/riyadh"')}
+          ${inp('Tags', 'tags', 'placeholder="e.g. wknd:activity/hiking, wknd:region/europe"')}
           ${chk('Hide in Navigation', 'hideInNav')}
         </div><div class="wiz-col">
           <h4 class="cpw-h">More Titles and Description</h4>
@@ -1033,70 +1042,230 @@ function openPublishDialog(path) {
 
 /* ---------- Assets console ---------- */
 
-function assetsScreen(path) {
-  const r = AR();
-  if (!JCR.get(r, path)) path = '/content/dam';
-  flag('visit:assets');
-  const segs = JCR.segs(path);
-  let acc = '';
-  const crumbs = segs.map(s => { acc += '/' + s; return acc; }).filter(p => p !== '/content');
-  const n = JCR.get(r, path);
-  const items = n.children.filter(c => ['sling:Folder', 'nt:folder', 'sling:OrderedFolder', 'dam:Asset'].includes(JCR.type(c)));
-  const sel = S.ui.assetsSel && S.ui.assetsSel.startsWith(path + '/') ? S.ui.assetsSel : null;
-  const crumb = `<details class="dd"><summary class="tb-crumb">${esc(path === '/content/dam' ? 'Assets' : (n.props['jcr:title'] || n.name))}${icon('ChevronDown', 10)}</summary>
-    <div class="dd-menu"><a href="#" data-act="go" data-url="/assets.html/content/dam">Assets</a>${crumbs.slice(1).reverse().map(p => `<a href="#" data-act="go" data-url="/assets.html${esc(p)}">${esc(JCR.name(p))}</a>`).join('')}</div></details>`;
-  const bar = sel
-    ? selectionBar(`${isCF(r, sel) ? qa('cfOpen', 'Edit', 'Open', 'e', `data-path="${esc(sel)}"`) : ''}${qa('assetProps', 'Properties', 'Properties', 'p')}${qa('assetPublish', 'PublishCheck', 'Quick Publish')}
-        ${qa('assetUnpublish', 'PublishRemove', 'Unpublish')}${qa('assetDelete', 'Delete', 'Delete', 'backspace')}`, 'assetUncheck')
-    : titleBar(`<span class="tb-rail">${icon('RailLeft')}<span>Content Only</span></span>`, crumb,
-      `<span class="tb-views"><button class="iconbtn on" title="Card View">${icon('ViewCard')}</button></span>
-       <details class="dd right"><summary class="btn primary">Create</summary><div class="dd-menu">
-       <a href="#" data-act="assetFolder" data-path="${esc(path)}">Folder</a><a href="#" data-act="assetUpload" data-path="${esc(path)}">Files</a>
-       <a href="#" data-act="cfCreate" data-path="${esc(path)}">Content Fragment</a></div></details>`);
-  const cards = items.map(c => {
-    const p = JCR.join(path, c.name);
-    if (JCR.type(c) === 'dam:Asset' && isCF(r, p)) {
-      const model = cfModelOf(r, p);
-      const pub = !!JCR.get(PR(), p);
-      return `<div class="acard ${sel === p ? 'sel' : ''}" data-act="assetSel" data-path="${esc(p)}" data-dbl="cfOpen" title="${esc(p)}">
-        <div class="athumb cf-thumb">${icon('DocumentFragment', 48)}<i class="ci-check">${icon('Checkmark', 12)}</i></div>
-        <div class="acard-info"><b>${esc(titleOf(r, p))}</b><small>Content Fragment · ${esc(model ? titleOf(r, model) : '?')}</small><small>${pub ? 'Published' : 'Not published'}</small></div></div>`;
-    }
-    if (JCR.type(c) === 'dam:Asset') {
-      const src = assetSrc(r, p);
-      const meta = JCR.get(c, 'jcr:content/metadata');
-      const pub = !!JCR.get(PR(), p);
-      return `<div class="acard ${sel === p ? 'sel' : ''}" data-act="assetSel" data-path="${esc(p)}">
-        <div class="athumb" style="background-image:url('${src}')"><i class="ci-check">${icon('Checkmark', 12)}</i></div>
-        <div class="acard-info"><b>${esc((meta && meta.props['dc:title']) || c.name)}</b><small>${esc(c.name.split('.').pop().toUpperCase())} · ${pub ? 'Published' : 'Not published'}</small></div></div>`;
-    }
-    return `<div class="acard folder" data-act="go" data-url="/assets.html${esc(p)}"><div class="athumb">${icon('Folder', 48)}</div>
-      <div class="acard-info"><b>${esc(c.props['jcr:title'] || c.name)}</b><small>Folder</small></div></div>`;
-  }).join('');
-  return shell('Assets', `${bar}<div class="agrid">${cards || '<p class="muted">This folder is empty</p>'}</div>`);
+const DAM_ROOT = '/content/dam';
+const DAM_FOLDERS = ['sling:Folder', 'nt:folder', 'sling:OrderedFolder'];
+
+const isDamAsset = (r, p) => JCR.type(JCR.get(r, p)) === 'dam:Asset';
+
+function damKids(r, p) {
+  const n = JCR.get(r, p);
+  if (!n || JCR.type(n) === 'dam:Asset') return [];
+  return n.children.filter(c => c.name !== 'jcr:content' && (DAM_FOLDERS.includes(JCR.type(c)) || JCR.type(c) === 'dam:Asset')).map(c => JCR.join(p, c.name));
 }
 
-A.cfOpen = d => go('/editor.html' + d.path);
+function damTitle(r, p) {
+  if (p === DAM_ROOT) return 'Assets';
+  const n = JCR.get(r, p);
+  if (JCR.type(n) !== 'dam:Asset') return n.props['jcr:title'] || n.name;
+  if (isCF(r, p)) return titleOf(r, p);
+  return (JCR.get(n, 'jcr:content/metadata') || { props: {} }).props['dc:title'] || n.name;
+}
 
-A.assetSel = d => {
-  S.ui.assetsSel = S.ui.assetsSel === d.path ? null : d.path;
+// All DAM folders, for the Move dialog (renditions folders inside assets are not DAM folders)
+function damFolders(r) {
+  const out = [];
+  JCR.walk(JCR.get(r, DAM_ROOT), DAM_ROOT, (n, p) => { if (DAM_FOLDERS.includes(JCR.type(n)) && !p.includes('/jcr:content')) out.push(p); });
+  return out;
+}
+
+function fmtBytes(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
+  return (b / 1024 / 1024).toFixed(1) + ' MB';
+}
+
+function assetInfo(r, p) {
+  const c = JCR.get(r, p + '/jcr:content') || { props: {} };
+  const meta = JCR.get(r, p + '/jcr:content/metadata') || { props: {} };
+  const data = String(readFile(r, p + '/jcr:content/renditions/original') || '');
+  const mime = meta.props['dc:format'] || '';
+  const comma = data.indexOf(',');
+  let raw = '';
+  try { raw = data.includes(';base64,') ? '' : decodeURIComponent(data.slice(comma + 1)); } catch (e) { /* not text */ }
+  const bytes = data.includes(';base64,') ? Math.round((data.length - comma - 1) * 3 / 4) : new Blob([raw]).size;
+  let w = meta.props['tiff:ImageWidth'];
+  let h = meta.props['tiff:ImageLength'];
+  const vb = !w && raw.match(/viewBox="0 0 (\d+) (\d+)"/);
+  if (vb) [w, h] = [vb[1], vb[2]];
+  return {
+    title: damTitle(r, p), modified: c.props['jcr:lastModified'], by: c.props['jcr:lastModifiedBy'] || 'admin',
+    w, h, bytes, type: mime.split('/')[0].toUpperCase() || 'FILE', mime,
+  };
+}
+
+// Everything under /content that points at p (or inside it): fileReference, fragment paths, CF references…
+function damRefs(r, p) {
+  const owners = new Set();
+  JCR.walk(JCR.get(r, '/content'), '/content', (n, np) => {
+    if (np === p || np.startsWith(p + '/')) return;
+    const hit = Object.values(n.props).some(v => [].concat(v).some(s => typeof s === 'string' && (s === p || s.startsWith(p + '/'))));
+    if (!hit) return;
+    const i = np.indexOf('/jcr:content');
+    owners.add(i > -1 ? np.slice(0, i) : np);
+  });
+  return [...owners];
+}
+
+function damRow(r, p, on, checked) {
+  const asset = isDamAsset(r, p);
+  const cf = asset && isCF(r, p);
+  const src = asset && !cf ? assetSrc(r, p) : '';
+  const title = damTitle(r, p);
+  const hasKids = !asset && damKids(r, p).length > 0;
+  const pub = asset && !!JCR.get(PR(), p);
+  const nav = asset ? 'data-act="assetSel" data-kind="asset"' : `data-act="go" data-url="/assets.html${esc(p)}"`;
+  return `<div class="ci ${on ? 'active' : ''} ${checked ? 'checked' : ''}" ${nav} data-path="${esc(p)}" ${cf ? 'data-dbl="cfOpen"' : ''} title="${esc(p)}">
+    <span class="ci-thumb ${src ? 'img' : ''}" ${asset ? '' : `data-act="assetSel" data-kind="folder" data-path="${esc(p)}" title="Select"`} ${src ? `style="background-image:url('${src}')"` : ''}>${src ? '' : icon(cf ? 'DocumentFragment' : 'Folder', 24)}<i class="ci-check">${icon('Checkmark', 12)}</i></span>
+    <span class="ci-text"><b>${esc(title)}</b>${title !== JCR.name(p) ? `<small>${esc(JCR.name(p))}</small>` : ''}</span>
+    ${pub ? '<i class="ci-dot green" title="Published"></i>' : ''}
+    ${hasKids ? `<span class="ci-arrow">${icon('ChevronRight', 14)}</span>` : ''}
+  </div>`;
+}
+
+const pvRow = (k, v) => `<span>${k}</span><b>${v}</b>`;
+
+function assetPreview(r, p) {
+  const cf = isCF(r, p);
+  const i = assetInfo(r, p);
+  const src = cf ? '' : assetSrc(r, p);
+  const pub = JCR.get(PR(), p);
+  const model = cf && cfModelOf(r, p);
+  return `<div class="col preview apreview">
+    <div class="pv-thumb ${src ? 'img' : ''}" ${src ? `style="background-image:url('${src}')"` : ''}>${src ? '' : icon(cf ? 'DocumentFragment' : 'Asset', 48)}</div>
+    <div class="pv-kvs">${pvRow('Title', esc(i.title))}${pvRow('Modified', fmtDate(i.modified))}${pvRow('Modified By', esc(i.by))}
+      ${cf ? pvRow('Model', esc(model ? titleOf(r, model) : '?')) : ''}${i.w ? pvRow('Dimensions', `${esc(i.w)} x ${esc(i.h)} px`) : ''}
+      ${cf ? '' : pvRow('Size', fmtBytes(i.bytes))}${pvRow('Type', cf ? 'CONTENT FRAGMENT' : esc(i.type))}${pvRow('Published', pub ? 'Yes' : 'No')}</div>
+    <button class="btn outline" data-act="${cf ? 'cfOpen' : 'assetProps'}" data-path="${esc(p)}">More Details</button></div>`;
+}
+
+function folderPreview(r, p) {
+  const imgs = [];
+  JCR.walk(JCR.get(r, p), p, (n, np) => { if (imgs.length < 4 && JCR.type(n) === 'dam:Asset' && !isCF(r, np)) imgs.push(assetSrc(r, np)); });
+  return `<div class="col preview apreview">
+    <div class="pv-collage">${imgs.length ? imgs.map(s => `<i style="background-image:url('${s}')"></i>`).join('') : icon('Folder', 48)}</div>
+    <div class="pv-kvs">${pvRow('Title', esc(damTitle(r, p)))}${pvRow('Name', esc(JCR.name(p)))}${pvRow('Items', damKids(r, p).length)}</div></div>`;
+}
+
+const qaOff = (ico, label, key) => `<button class="qa off" title="Not simulated in the lab">${icon(ico)}<span>${label}</span>${key ? `<kbd>(${key})</kbd>` : ''}</button>`;
+
+function assetsSelectionBar(r, sel) {
+  const asset = isDamAsset(r, sel);
+  const cf = asset && isCF(r, sel);
+  const pubMenu = `<details class="dd"><summary class="qa">${icon('Send')}<span>Manage Publication</span></summary><div class="dd-menu">
+    <a href="#" data-act="assetPublish">Publish</a><a href="#" data-act="assetUnpublish">Unpublish</a></div></details>`;
+  const edits = `${qa('assetCopy', 'Copy', 'Copy', 'ctrl+c')}${qa('assetMove', 'Move', 'Move', 'm')}${qa('assetDelete', 'Delete', 'Delete', 'backspace')}`;
+  const actions = asset
+    ? `${cf ? qa('cfOpen', 'Edit', 'Edit', 'e', `data-path="${esc(sel)}"`) : qaOff('Image', 'Smart Crop', 's')}${qaOff('Link', 'Share Link')}
+       ${cf ? '' : qa('assetDownload', 'Download', 'Download')}${qaOff('LockClosed', 'Checkout')}${qa('assetProps', 'Properties', 'Properties', 'p')}
+       ${qa('assetPublish', 'PublishCheck', 'Quick Publish')}${pubMenu}${qaOff('Label', 'Manage Tags')}${qaOff('Collection', 'To Collection')}${edits}`
+    : `${qaOff('Link', 'Share Link')}${qaOff('Download', 'Download')}${qa('assetProps', 'Properties', 'Properties', 'p')}
+       ${qa('assetPublish', 'PublishCheck', 'Quick Publish')}${pubMenu}${qaOff('Label', 'Manage Tags')}${qaOff('Collection', 'To Collection')}${edits}`;
+  return selectionBar(actions, 'assetUncheck');
+}
+
+function assetsScreen(path) {
+  const r = AR();
+  if (!path.startsWith(DAM_ROOT) || !JCR.get(r, path)) path = DAM_ROOT;
+  flag('visit:assets');
+  // opened a component folder (page → component) in the My Site Media Library
+  if (path.startsWith(MYSITE_DAM + '/corporate/assets/images/') && JCR.segs(path).length >= 8) flag('assets:mysite');
+  const folder = isDamAsset(r, path) ? JCR.parent(path) : path;
+  let sel = S.ui.assetsSel;
+  if (sel && (!JCR.get(r, sel) || JCR.parent(sel) !== folder)) sel = S.ui.assetsSel = null;
+  const card = S.ui.assetsView === 'card';
+
+  const crumbs = [];
+  for (let p = folder; p.startsWith(DAM_ROOT); p = JCR.parent(p)) crumbs.push(p);
+  const crumb = `<details class="dd"><summary class="tb-crumb">${esc(damTitle(r, folder))}${icon('ChevronDown', 10)}</summary>
+    <div class="dd-menu">${crumbs.map(p => `<a href="#" data-act="go" data-url="/assets.html${esc(p)}">${esc(damTitle(r, p))}</a>`).join('')}</div></details>`;
+  const views = `<details class="dd right"><summary class="iconbtn tb-view" title="View">${icon(card ? 'ViewCard' : 'ViewColumn')}${icon('ChevronDown', 10)}</summary>
+    <div class="dd-menu"><a href="#" data-act="assetsView" data-v="column">${icon('ViewColumn', 14)} Column View</a><a href="#" data-act="assetsView" data-v="card">${icon('ViewCard', 14)} Card View</a><a class="off">${icon('ViewList', 14)} List View</a></div></details>`;
+  const clip = S.ui.assetClip && JCR.get(r, S.ui.assetClip) ? S.ui.assetClip : null;
+  const bar = sel
+    ? assetsSelectionBar(r, sel)
+    : titleBar(`<span class="tb-rail">${icon('RailLeft')}<span>Content Only</span></span>`, crumb,
+      `${clip ? `<button class="btn quiet" data-act="assetPaste" data-path="${esc(folder)}" title="Paste ${esc(clip)} here">${icon('Paste')} Paste</button>` : ''}
+       <span class="muted small">${damKids(r, folder).length} items</span>
+       <button class="btn quiet" disabled title="Not simulated in the lab">${icon('UploadToCloud')} Dropzone</button>
+       ${folder !== DAM_ROOT ? `<details class="dd right"><summary class="btn primary rect">Create</summary><div class="dd-menu create-menu">
+         <a href="#" data-act="assetFolder" data-path="${esc(folder)}">${icon('Folder', 16)} Folder</a><a href="#" data-act="assetUpload" data-path="${esc(folder)}">${icon('UploadToCloud', 16)} Files</a>
+         <a href="#" data-act="cfCreate" data-path="${esc(folder)}">${icon('DocumentFragment', 16)} Content Fragment</a></div></details>` : ''}
+       ${views}`);
+
+  if (card) {
+    const cards = damKids(r, folder).map(p => {
+      const c = JCR.get(r, p);
+      if (JCR.type(c) === 'dam:Asset' && isCF(r, p)) {
+        const model = cfModelOf(r, p);
+        return `<div class="acard ${sel === p ? 'sel' : ''}" data-act="assetSel" data-kind="asset" data-path="${esc(p)}" data-dbl="cfOpen" title="${esc(p)}">
+          <div class="athumb cf-thumb">${icon('DocumentFragment', 48)}<i class="ci-check">${icon('Checkmark', 12)}</i></div>
+          <div class="acard-info"><b>${esc(titleOf(r, p))}</b><small>Content Fragment · ${esc(model ? titleOf(r, model) : '?')}</small><small>${JCR.get(PR(), p) ? 'Published' : 'Not published'}</small></div></div>`;
+      }
+      if (JCR.type(c) === 'dam:Asset') {
+        return `<div class="acard ${sel === p ? 'sel' : ''}" data-act="assetSel" data-kind="asset" data-path="${esc(p)}">
+          <div class="athumb" style="background-image:url('${assetSrc(r, p)}')"><i class="ci-check">${icon('Checkmark', 12)}</i></div>
+          <div class="acard-info"><b>${esc(damTitle(r, p))}</b><small>${esc(c.name.split('.').pop().toUpperCase())} · ${JCR.get(PR(), p) ? 'Published' : 'Not published'}</small></div></div>`;
+      }
+      return `<div class="acard folder ${sel === p ? 'sel' : ''}" data-act="go" data-url="/assets.html${esc(p)}"><div class="athumb">${icon('Folder', 48)}<i class="ci-check" data-act="assetSel" data-kind="folder" data-path="${esc(p)}">${icon('Checkmark', 12)}</i></div>
+        <div class="acard-info"><b>${esc(damTitle(r, p))}</b><small>Folder</small></div></div>`;
+    }).join('');
+    return shell('Assets', `${bar}<div class="agrid">${cards || '<p class="muted">This folder is empty</p>'}</div>`);
+  }
+
+  // Column view: one column per level from /content/dam down to the open folder, then a preview
+  const cols = [];
+  for (let p = path; p.startsWith(DAM_ROOT); p = JCR.parent(p)) cols.unshift(p);
+  const columns = cols.map(cp => {
+    if (isDamAsset(r, cp)) return assetPreview(r, cp);
+    const items = damKids(r, cp);
+    if (!items.length) return cp === folder ? '<div class="col empty">This folder is empty</div>' : '';
+    return `<div class="col">${items.map(p => damRow(r, p, cols.includes(p), sel === p)).join('')}</div>`;
+  }).join('') + (sel && !isDamAsset(r, sel) ? folderPreview(r, sel) : '');
+  return shell('Assets', `${bar}<div class="sites-wrap"><div class="columns">${columns}</div></div>`);
+}
+
+A.cfOpen = d => go('/editor.html' + (d.path || S.ui.assetsSel));
+
+A.assetsView = d => {
+  S.ui.assetsView = d.v;
   commit();
 };
+
+// Column view: clicking an asset opens its preview and selects it; a folder is selected from its thumbnail
+A.assetSel = d => {
+  const r = AR();
+  const on = S.ui.assetsSel !== d.path;
+  S.ui.assetsSel = on ? d.path : null;
+  const url = (S.ui.url[S.ui.tab] || '').slice('/assets.html'.length);
+  const folder = isDamAsset(r, url) ? JCR.parent(url) : url;
+  if (S.ui.assetsView !== 'card' && isDamAsset(r, d.path)) go('/assets.html' + (on ? d.path : JCR.parent(d.path)));
+  // a folder picked in an ancestor column: open its parent so the selection belongs to the open folder
+  else if (on && JCR.parent(d.path) !== folder) go('/assets.html' + JCR.parent(d.path));
+  else commit();
+};
 A.assetUncheck = () => {
+  const p = S.ui.assetsSel;
   S.ui.assetsSel = null;
-  commit();
+  if (p && S.ui.assetsView !== 'card' && isDamAsset(AR(), p)) go('/assets.html' + JCR.parent(p));
+  else commit();
 };
 
 A.assetFolder = d => openModal({
   title: 'Create Folder',
-  body: field('Title', 'title', ''),
+  body: `${field('Title *', 'title', '')}${field('Name', 'name', '', 'Leave empty to generate it from the title. The name is the node name in the JCR (part of every asset URL).')}`,
   okLabel: 'Create',
   ok: b => {
-    const t = formData(b).title.trim();
-    if (!t) return false;
+    const f = formData(b);
+    const t = f.title.trim();
+    if (!t) { toast('Title is required.', 'error'); return false; }
     const parent = JCR.get(AR(), d.path);
-    const name = JCR.unique(parent, slug(t));
+    // like AEM: keep the case, turn every run of other characters into '-' ("C_007 -Hero" → "C_007--Hero")
+    const name = (f.name.trim() || t).replace(/[^A-Za-z0-9_-]+/g, '-');
+    if (parent.children.some(c => c.name === name)) { toast(`A folder named <code>${esc(name)}</code> already exists here.`, 'error'); return false; }
     parent.children.push(JCR.node(name, { 'jcr:primaryType': 'sling:Folder', 'jcr:title': t }));
+    flag('asset:folder');
+    if (d.path.startsWith(MYSITE_DAM + '/')) flag('asset:folder:mysite');
+    toast(`Folder <code>${esc(name)}</code> created.`);
     commit();
   },
 });
@@ -1106,7 +1275,7 @@ A.assetUpload = d => openModal({
   okLabel: 'Upload',
   body: `${field('Title *', 'title', '')}
     <label class="check"><input type="radio" name="src" value="gen" checked> Generate a sample image</label>
-    ${selectField('Style', 'kind', 'dunes', [['diriyah', 'Mud-brick town'], ['dunes', 'Desert dunes'], ['sea', 'Sea'], ['mountains', 'Mountains']])}
+    ${selectField('Style', 'kind', 'dunes', [['town', 'Old town'], ['dunes', 'Desert dunes'], ['sea', 'Sea'], ['mountains', 'Mountains']])}
     <label class="check"><input type="radio" name="src" value="file"> Upload an image from your computer (max 400 KB)</label>
     <input type="file" name="file" accept="image/*">`,
   ok: b => {
@@ -1115,10 +1284,14 @@ A.assetUpload = d => openModal({
     if (!title) { toast('Title is required.', 'error'); return false; }
     const parent = JCR.get(AR(), d.path);
     const fileEl = b.querySelector('input[type=file]');
-    const finish = (dataUri, mime, ext) => {
+    const finish = (dataUri, mime, ext, w, h) => {
       const name = JCR.unique(parent, slug(title) + '.' + ext);
-      assetAt(AR(), JCR.join(d.path, name), title, dataUri, mime);
+      const p = JCR.join(d.path, name);
+      assetAt(AR(), p, title, dataUri, mime);
+      JCR.get(AR(), p + '/jcr:content').props['jcr:lastModifiedBy'] = curUser();
+      if (w) Object.assign(JCR.get(AR(), p + '/jcr:content/metadata').props, { 'tiff:ImageWidth': w, 'tiff:ImageLength': h });
       flag('asset:uploaded');
+      if (d.path.startsWith(MYSITE_DAM + '/')) flag('asset:uploaded:mysite');
       closeModal();
       toast(`Uploaded <code>${esc(name)}</code>`);
       commit();
@@ -1128,19 +1301,42 @@ A.assetUpload = d => openModal({
       if (!file) { toast('Choose a file first.', 'error'); return false; }
       if (file.size > 400 * 1024) { toast('That file is larger than 400 KB (the lab stores everything in your browser).', 'error'); return false; }
       const rd = new FileReader();
-      rd.onload = () => finish(rd.result, file.type || 'image/png', (file.name.split('.').pop() || 'png').toLowerCase());
+      rd.onload = () => {
+        const args = [rd.result, file.type || 'image/png', (file.name.split('.').pop() || 'png').toLowerCase()];
+        const img = new Image();
+        img.onload = () => finish(...args, img.naturalWidth, img.naturalHeight);
+        img.onerror = () => finish(...args);
+        img.src = rd.result;
+      };
       rd.readAsDataURL(file);
       return false;
     }
-    const spec = { diriyah: ['#f6d9a6', '#e9a15b'], dunes: ['#ffe2b0', '#f08a4b'], sea: ['#bfe8ff', '#2e86c1'], mountains: ['#d7ecff', '#6c8fb3'] }[f.kind];
+    const spec = { town: ['#f6d9a6', '#e9a15b'], dunes: ['#ffe2b0', '#f08a4b'], sea: ['#bfe8ff', '#2e86c1'], mountains: ['#d7ecff', '#6c8fb3'] }[f.kind];
     finish(svgImage(title, f.kind, spec[0], spec[1]), 'image/svg+xml', 'svg');
     return false;
   },
 });
 
-A.assetProps = () => {
-  const p = S.ui.assetsSel;
-  const meta = JCR.get(AR(), p + '/jcr:content/metadata');
+A.assetProps = d => {
+  const r = AR();
+  const p = (d && d.path) || S.ui.assetsSel;
+  if (!isDamAsset(r, p)) {
+    const n = JCR.get(r, p);
+    openModal({
+      title: `Folder Properties <small>${esc(p)}</small>`,
+      body: `${field('Title', 'title', n.props['jcr:title'] || '')}<label class="field"><span>Name</span><input value="${esc(n.name)}" disabled></label>
+        <p class="hint">Changing the title doesn't change the name; to rename the node use <b>Move</b>.</p>`,
+      okLabel: 'Save & Close',
+      ok: b => {
+        const t = formData(b).title.trim();
+        if (t) n.props['jcr:title'] = t;
+        else delete n.props['jcr:title'];
+        commit();
+      },
+    });
+    return;
+  }
+  const meta = JCR.get(r, p + '/jcr:content/metadata');
   openModal({
     title: `Asset Properties <small>${esc(p)}</small>`,
     body: `${field('Title', 'title', meta.props['dc:title'])}<label class="field"><span>Description</span><textarea name="desc">${esc(meta.props['dc:description'] || '')}</textarea></label>
@@ -1151,40 +1347,143 @@ A.assetProps = () => {
       meta.props['dc:title'] = f.title;
       if (f.desc) meta.props['dc:description'] = f.desc;
       else delete meta.props['dc:description'];
-      const c = JCR.get(AR(), p + '/jcr:content');
-      c.props['jcr:lastModified'] = now();
+      const c = JCR.get(r, p + '/jcr:content');
+      Object.assign(c.props, { 'jcr:lastModified': now(), 'jcr:lastModifiedBy': curUser() });
       flag('asset:props');
       commit();
     },
   });
 };
 
+A.assetDownload = () => {
+  const p = S.ui.assetsSel;
+  const a = document.createElement('a');
+  a.href = readFile(AR(), p + '/jcr:content/renditions/original');
+  a.download = JCR.name(p);
+  a.click();
+};
+
 A.assetPublish = () => {
+  // a content fragment is published with the fragments and assets it references
+  if (isCF(AR(), S.ui.assetsSel)) return cfPublishFlow(S.ui.assetsSel);
   queueReplication('Activate', [S.ui.assetsSel]);
   flag('asset:published');
-  toast('Asset publishing…');
+  toast(isDamAsset(AR(), S.ui.assetsSel) ? 'Asset publishing…' : 'Publishing the folder and everything in it…');
   commit();
 };
 
 A.assetUnpublish = () => {
-  if (!JCR.get(PR(), S.ui.assetsSel)) { toast('This asset is not published.', 'warn'); return; }
+  if (!JCR.get(PR(), S.ui.assetsSel)) { toast('This item is not published.', 'warn'); return; }
   queueReplication('Deactivate', [S.ui.assetsSel]);
   commit();
 };
 
+// Delete Asset → (if referenced or published) Force Delete, like AEM
 A.assetDelete = () => {
+  const r = AR();
   const p = S.ui.assetsSel;
-  const users = allPagePaths(AR()).filter(pg => {
-    let hit = false;
-    JCR.walk(JCR.get(AR(), pg + '/jcr:content') || JCR.node('x'), '', n => { if (n.props.fileReference === p) hit = true; });
-    return hit;
-  });
-  confirmBox('Delete asset', `Delete <code>${esc(p)}</code>?${users.length ? `<br><br>⚠ It is referenced by: ${users.map(u => `<code>${esc(u)}</code>`).join(', ')}` : ''}`, () => {
+  if (!p) return;
+  const doDelete = () => {
     if (JCR.get(PR(), p)) queueReplication('Deactivate', [p]);
-    JCR.remove(AR(), p);
+    JCR.remove(r, p);
     S.ui.assetsSel = null;
-    commit();
-  }, 'Delete');
+    flag('asset:deleted');
+    toast(`Deleted <code>${esc(p)}</code>`);
+    go('/assets.html' + JCR.parent(p));
+  };
+  openModal({
+    title: 'Delete Asset',
+    style: 'alert',
+    okLabel: 'Delete',
+    body: `<p class="confirm">You are going to delete the following asset:</p><p><b>${esc(damTitle(r, p))}</b> <code>${esc(JCR.name(p))}</code></p>`,
+    ok: () => {
+      const refs = damRefs(r, p);
+      const pub = !!JCR.get(PR(), p);
+      if (!refs.length && !pub) { doDelete(); return; }
+      flag('asset:forcedelete');
+      setTimeout(() => openModal({
+        title: `<span class="force-title">${icon('Alert', 18)} Force Delete</span>`,
+        style: 'alert',
+        cls: 'm-force',
+        okLabel: 'Delete',
+        body: `<p class="confirm">One or more item(s) has local references and/or activated.</p>
+          ${refs.length ? `<p><b>Referenced by</b></p><ul class="ref-list">${refs.map(x => `<li><code>${esc(x)}</code></li>`).join('')}</ul>` : ''}
+          ${pub ? '<p><b>Activated</b>: it is published. Deleting it also unpublishes it.</p>' : ''}
+          <p class="hint">Deleting it anyway leaves broken images or links on those pages.</p>`,
+        ok: doDelete,
+      }), 0);
+    },
+  });
+};
+
+A.assetCopy = () => {
+  S.ui.assetClip = S.ui.assetsSel;
+  S.ui.assetsSel = null;
+  toast(`Copied <code>${esc(JCR.name(S.ui.assetClip))}</code>. Open the target folder and press <b>Paste</b>.`);
+  commit();
+};
+
+A.assetPaste = d => {
+  const r = AR();
+  const src = S.ui.assetClip;
+  if (!src || !JCR.get(r, src)) return;
+  if (d.path === src || d.path.startsWith(src + '/')) { toast('You cannot paste a folder into itself.', 'error'); return; }
+  const parent = JCR.get(r, d.path);
+  const copy = JCR.clone(JCR.get(r, src));
+  const dot = copy.name.lastIndexOf('.');
+  const [base, ext] = dot > 0 ? [copy.name.slice(0, dot), copy.name.slice(dot)] : [copy.name, ''];
+  let name = copy.name;
+  for (let i = 1; parent.children.some(c => c.name === name); i++) name = base + i + ext;
+  copy.name = name;
+  // a copy is a new, unpublished item
+  JCR.walk(copy, '', n => { delete n.props['cq:lastReplicated']; delete n.props['cq:lastReplicationAction']; });
+  parent.children.push(copy);
+  S.ui.assetClip = null;
+  flag('asset:copied');
+  toast(`Pasted as <code>${esc(name)}</code>`);
+  commit();
+};
+
+A.assetMove = () => {
+  const r = AR();
+  const p = S.ui.assetsSel;
+  const refs = damRefs(r, p);
+  const folders = damFolders(r).filter(f => f !== p && !f.startsWith(p + '/'));
+  openModal({
+    title: `Move <small>${esc(p)}</small>`,
+    okLabel: 'Move',
+    body: `${field('Name', 'name', JCR.name(p))}
+      ${selectField('Destination', 'dest', JCR.parent(p), folders.map(f => [f, f.slice(DAM_ROOT.length) || '/']))}
+      <label class="check"><input type="checkbox" name="adjust" ${refs.length ? 'checked' : 'disabled'}> Adjust references${refs.length ? ` (${refs.length}: ${refs.map(x => `<code>${esc(x)}</code>`).join(', ')})` : ' (nothing references it)'}</label>
+      <p class="hint">Without adjusting, every page that points to the old path shows a broken image.</p>`,
+    ok: b => {
+      const f = formData(b);
+      const name = f.name.trim();
+      if (!name || /[/\s]/.test(name)) { toast('Enter a valid name (no spaces or slashes).', 'error'); return false; }
+      const np = JCR.join(f.dest, name);
+      if (np === p) { toast('Choose another folder or name.', 'warn'); return false; }
+      if (JCR.get(r, np)) { toast(`<code>${esc(np)}</code> already exists.`, 'error'); return false; }
+      if (JCR.get(PR(), p)) queueReplication('Deactivate', [p]);
+      const node = JCR.get(r, p);
+      JCR.remove(r, p);
+      node.name = name;
+      JCR.get(r, f.dest).children.push(node);
+      let n = 0;
+      if (f.adjust) {
+        JCR.walk(JCR.get(r, '/content'), '/content', x => {
+          for (const [k, v] of Object.entries(x.props)) {
+            const fix = s => (typeof s === 'string' && (s === p || s.startsWith(p + '/')) ? (n++, np + s.slice(p.length)) : s);
+            x.props[k] = Array.isArray(v) ? v.map(fix) : fix(v);
+          }
+        });
+      }
+      S.ui.assetsSel = null;
+      flag('asset:moved');
+      if (n) flag('asset:moved:refs');
+      toast(`Moved to <code>${esc(np)}</code>${f.adjust ? ` · ${n} reference(s) updated. Republish those pages.` : ''}`);
+      go('/assets.html' + f.dest);
+    },
+  });
 };
 
 /* ---------- Templates console ---------- */

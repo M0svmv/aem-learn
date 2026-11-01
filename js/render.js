@@ -463,10 +463,14 @@ function renderNode(t, ctx) {
   const policy = getPolicy(r, ctx.tpl, t.pkey);
   const short = String(t.rt).split('/').pop();
   const styles = styleClasses(policy, t.props['cq:styleIds']);
-  const canInsert = ctx.editing && t.container && (t.kind === 'content' || t.kind === 'struct');
+  // in Structure mode an unlocked container is the authors' area: its starting content is set in Initial Content
+  const authorArea = t.kind === 'struct' && t.unlocked && t.container;
+  const canInsert = ctx.editing && t.container && (t.kind === 'content' || t.kind === 'struct') && !authorArea;
   let kids = t.children.map(c => renderNode(c, ctx)).join('');
   if (canInsert) {
     kids += `<div class="lab-drop" data-drop="${esc(t.path)}" data-ckey="${esc(t.ckey)}" data-srt="${esc(t.rt)}">Drag components here</div>`;
+  } else if (ctx.editing && authorArea) {
+    kids += `<div class="lab-ph lab-ph--open"><b>Unlocked container</b><br>Authors fill this on their pages. To give new pages starting components, switch to <b>Initial Content</b> mode.</div>`;
   }
   const script = componentScript(r, t.rt);
   const inner = script && script.kind === 'htl' ? renderHtl(script, t, ctx, kids)
@@ -505,6 +509,7 @@ const EDITOR_CSS = `
 .lab-drop{border:1px dashed #b3b3b3;background:transparent;color:#8e8e8e;font:13px "Source Sans 3","Segoe UI",sans-serif;text-align:center;padding:14px;margin:8px 0;cursor:pointer}
 .lab-drop:hover{border:1px solid #2680eb;color:#2680eb;background:rgba(38,128,235,.06)}
 .lab-ph{font:13px "Source Sans 3","Segoe UI",sans-serif;color:#8e8e8e;background:#f5f5f5;padding:18px;text-align:center;border:1px solid #e1e1e1;margin:8px 0}
+.lab-ph--open{border:1px dashed #2d9d78;background:rgba(45,157,120,.05);color:#4b4b4b}
 .lab-tb{position:absolute;z-index:99999;display:flex;align-items:center;background:#fff;border:1px solid #cacaca;border-radius:4px;box-shadow:0 1px 4px rgba(0,0,0,.15);padding:2px;font:13px "Source Sans 3","Segoe UI",sans-serif;color:#4b4b4b}
 .lab-tb[hidden]{display:none}
 .lab-tb button{border:0;background:none;width:32px;height:32px;padding:0;display:inline-flex;align-items:center;justify-content:center;border-radius:4px;cursor:pointer;color:#6e6e6e}

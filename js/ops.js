@@ -16,6 +16,10 @@ function resolveUrl(r, path) {
 
 function slingNotFound(path, extra) {
   flag('sling:404');
+  // a mistyped persisted-query URL is a common slip: point at the right shape
+  if (!extra && /^\/graphql\//.test(path) && !/^\/graphql\/execute\.json\/[^/]+\/[^/]+/.test(path)) {
+    extra = `<p>Persisted queries live at <code>/graphql/execute.json/&lt;config&gt;/&lt;query-name&gt;</code>, e.g. <a href="#" data-act="go" data-url="/graphql/execute.json/wknd/adventures-all">/graphql/execute.json/wknd/adventures-all</a>. Check the spelling of <b>execute</b>.</p>`;
+  }
   return `<div class="sling-err"><h1>Not Found (404)</h1><p>Cannot serve request to <code>${esc(path)}</code></p>
     <p class="muted">Sling could not resolve this URL to a resource in the repository${extra ? '' : ' (check the path in CRXDE)'}.</p>${extra || ''}</div>`;
 }
@@ -80,6 +84,7 @@ function routePublish(url) {
   const [path, query] = url.split('?');
   if (path.startsWith('/crx/packmgr')) return packMgrScreen('publish');
   if (path.startsWith('/graphql/execute.json/')) return graphqlRoute('publish', path);
+  if (path.startsWith('/frontend/')) return frontendRoute('publish', path);
   if (path === '/bin/querybuilder.json') return querybuilderJson('publish', query);
   if (path.startsWith('/crx/de')) return crxdeScreen('publish', url);
   if (path.startsWith('/system/console')) return webConsole('publish', path);

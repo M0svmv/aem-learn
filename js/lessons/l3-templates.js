@@ -188,6 +188,11 @@ lesson({
 <li><b>Unlocked</b>: الـ author يقدر يعدّله في كل صفحة. أول ما يعدّله، المحتوى بيتنسخ للصفحة (node بنفس الـ path تحت <code>jcr:content</code>).</li></ul>
 <h4>Containers</h4>
 <p>الـ container اللي unlocked هو "المنطقة" اللي الـ authors بيضيفوا فيها components. ودايماً لازم يبقى عنده policy.</p>
+<p><b>مهم:</b> الـ components اللي <b>جوه</b> container مفتوح مابقتش جزء من الـ Structure. مكانها <b>Initial Content</b>: بداية بتتنسخ لكل صفحة جديدة والـ author يقدر يعدّلها أو يمسحها. عشان كده لما تعمل Unlock لـ container فيه components، بتتنقل لـ Initial Content، ولو عملت Lock تاني بترجع للـ Structure. ومش هتقدر تضيف components جوه container مفتوح من الـ Structure.</p>
+<pre class="ls-diagram">Structure:        root 🔒 ─┬─ navigation 🔒
+                           ├─ container 🔓  ← المنطقة بتاعة الـ author
+                           └─ footer 🔒
+Initial Content:  container ─ title         ← بداية بتتنسخ للصفحات الجديدة</pre>
 <h4>لو قفلت تاني؟</h4>
 <p>لما تعمل Lock لـ component كان unlocked، الصفحات بترجع تعرض نسخة الـ template، والمحتوى اللي الـ authors كتبوه بيفضل في الـ JCR بس مش بيظهر.</p>`, `
 <h4>🔒 and 🔓</h4>
@@ -195,6 +200,11 @@ lesson({
 <li><b>Unlocked</b>: authors can edit it on each page. Once edited, the content is copied into the page (a node at the same path under <code>jcr:content</code>).</li></ul>
 <h4>Containers</h4>
 <p>An unlocked container is the "area" where authors add components; it always needs a policy.</p>
+<p><b>Important:</b> components <b>inside</b> an unlocked container are no longer part of the Structure. They belong in <b>Initial Content</b>: a starting point copied to each new page that authors can edit or delete. So unlocking a container that holds components moves them to Initial Content, and locking it again moves them back. You cannot add components inside an unlocked container in Structure mode.</p>
+<pre class="ls-diagram">Structure:        root 🔒 ─┬─ navigation 🔒
+                           ├─ container 🔓  ← the authors' area
+                           └─ footer 🔒
+Initial Content:  container ─ title         ← copied to new pages</pre>
 <h4>Locking again</h4>
 <p>Re-locking an unlocked component makes pages show the template version again; content authors wrote stays in the JCR but is no longer shown.</p>`),
   terms: [['editable', L('الـ property في الـ structure اللي بتعني unlocked.', 'The structure property that means unlocked.')]],

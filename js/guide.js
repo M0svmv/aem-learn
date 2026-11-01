@@ -48,13 +48,13 @@ function ensureGuideDom() {
     const a = b.dataset.gd;
     if (a === 'close') stopGuide();
     else if (a === 'next') guideAdvance();
-    else if (a === 'back' && GUIDE && GUIDE.i > 0) { GUIDE.i--; GUIDE.back = true; guideTick(); }
+    else if (a === 'back' && GUIDE && GUIDE.i > 0) { GUIDE.i--; GUIDE.back = true; GUIDE.wrongSel = false; guideTick(); }
     else if (a === 'tab') { S.ui.tab = b.dataset.tab; commit(); }
     else if (a === 'go') go(b.dataset.url, b.dataset.tab);
     else if (a === 'fill' && GUIDE && GUIDE.target) {
       // "Type it for me": puts the step's text into the highlighted field
       const st = GUIDE.task.guide[GUIDE.i];
-      GUIDE.target.value = st.fill;
+      GUIDE.target.value = typeof st.fill === 'function' ? st.fill() : st.fill;
       GUIDE.target.dispatchEvent(new Event('input', { bubbles: true }));
       GUIDE.target.focus();
     }
@@ -178,9 +178,16 @@ function guideTick() {
     if (!hit && step.go && S.ui.url[S.ui.tab] !== step.go) extra = `<button class="pri" data-gd="go" data-url="${esc(step.go)}" data-tab="${tab}">${en ? 'Take me there' : 'خدني هناك'}</button>`;
     if (!hit) say += `<div class="gd-where">${en ? 'I can\'t see this control right now — it may be inside a closed menu, or an earlier step is not finished. Use Back if needed.' : 'مش شايف العنصر ده دلوقتي — ممكن يكون جوه قايمة مقفولة، أو في خطوة قبلها لسه ماخلصتش. دوس رجوع لو محتاج.'}</div>`;
   }
+  // the wrong component got selected (e.g. a Button inside the wanted Container): explain, and move on once it is fixed
+  if (hit && !pre && GUIDE.wrongSel && hit.el.dataset && hit.el.dataset.cmp) {
+    if (S.ui.editor.sel === hit.el.dataset.cmp) { GUIDE.wrongSel = false; return guideAdvance(); }
+    say += `<div class="gd-where">${en
+      ? 'You selected a component <b>inside</b> it. Press <b>Parent</b> in the toolbar (the last-but-one icon) until the highlighted one is selected, or click its empty edge.'
+      : 'انت اخترت component <b>جوه</b> المحدد. دوس <b>Parent</b> في الـ toolbar لحد ما اللي متحدد يبقى هو المطلوب، أو دوس على الحافة الفاضية بتاعته.'}</div>`;
+  }
   const needsNext = step.next || !step.el;
   body.innerHTML = `${head}<div class="gd-say">${say}</div>
-    <div class="gd-btns">${back}${extra}${step.fill && hit ? `<button data-gd="fill">${en ? 'Type it for me' : 'اكتبه لي'}</button>` : ''}${needsNext && S.ui.tab === tab && atMatches(step) ? `<button class="pri" data-gd="next">${GUIDE.i + 1 < total ? (en ? 'Next' : 'التالي') : (en ? 'Finish' : 'خلصت')}</button>` : ''}</div>`;
+    <div class="gd-btns">${back}${extra}${step.fill && hit && S.ui.tab === tab ?`<button data-gd="fill">${en ? 'Type it for me' : 'اكتبه لي'}</button>` : ''}${needsNext && S.ui.tab === tab && atMatches(step) ? `<button class="pri" data-gd="next">${GUIDE.i + 1 < total ? (en ? 'Next' : 'التالي') : (en ? 'Finish' : 'خلصت')}</button>` : ''}</div>`;
   if (hit) {
     const r = guideRect(hit);
     ring.hidden = false;
@@ -245,12 +252,19 @@ function guideClick(e) {
   // a click on the control (or inside it) moves to the next step once the app has reacted
   if (t === node || (t.contains && t.contains(node))) {
     const i = GUIDE.i;
-    setTimeout(() => { if (GUIDE && GUIDE.i === i) guideAdvance(); }, 350);
+    // selecting a component: a click on a child inside a container selects the child, not the container
+    const cmp = t.dataset && t.dataset.cmp;
+    setTimeout(() => {
+      if (!GUIDE || GUIDE.i !== i) return;
+      if (cmp && S.ui.editor.sel !== cmp) { GUIDE.wrongSel = true; guideTick(); return; }
+      guideAdvance();
+    }, 350);
   }
 }
 
 function guideAdvance() {
   if (!GUIDE) return;
+  GUIDE.wrongSel = false;
   GUIDE.i++;
   GUIDE.back = false;
   guideTick();

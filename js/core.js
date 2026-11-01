@@ -174,6 +174,13 @@ document.addEventListener('click', e => {
   }
 });
 
+// Esc leaves selection mode in the consoles, like "1 selected (escape)" says
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape' || MODAL || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
+  const close = document.querySelector('.selbar .sel-close');
+  if (close) close.click();
+});
+
 document.addEventListener('dblclick', e => {
   const el = e.target.closest('[data-dbl]');
   if (el && A[el.dataset.dbl]) A[el.dataset.dbl](el.dataset, el, e);
@@ -433,6 +440,9 @@ function render() {
       const s = panelScroll[i][j];
       if (s) { el.scrollTop = s[0]; el.scrollLeft = s[1]; }
     }));
+  } else {
+    // a new location in a column view: show the deepest column, like AEM
+    requestAnimationFrame(() => document.querySelectorAll('.columns').forEach(c => { c.scrollLeft = c.scrollWidth; }));
   }
   render.lastScreen = screenKey;
   AFTER.forEach(fn => fn());
