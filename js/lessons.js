@@ -62,6 +62,7 @@ const LEVELS = [
 
 const LESSONS = [];
 function lesson(def) {
+  (def.tasks || []).forEach((t, i) => { t.key = def.id + ':' + i; });
   LESSONS.push(def);
 }
 
@@ -69,8 +70,14 @@ function lessonById(id) {
   return LESSONS.find(l => String(l.id) === String(id));
 }
 
+// A task stays done once it has been done: later tasks often undo earlier ones (create a node, then delete it)
 function taskOk(t) {
-  try { return !!t.ok(); } catch (e) { return false; }
+  S.tasksDone = S.tasksDone || {};
+  if (S.tasksDone[t.key]) return true;
+  let ok = false;
+  try { ok = !!t.ok(); } catch (e) { /* not done yet */ }
+  if (ok) { S.tasksDone[t.key] = Date.now(); setTimeout(save); } // ticks are found while rendering, after the commit's save
+  return ok;
 }
 
 function lessonProgress(l) {

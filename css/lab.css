@@ -651,6 +651,8 @@ table.props td.val { font-family: "Courier New", monospace; word-break: break-al
 .pm-right { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .pm-list { flex: 1; overflow: auto; }
 .pm-empty { padding: 30px; color: #555; line-height: 1.7; }
+.pm-sample { margin-top: 12px; padding: 10px 12px; border: 1px dashed #b6c9e8; border-radius: 6px; background: #f5f9ff; font-size: 13px; line-height: 1.5; }
+.pm-sample div { margin-top: 8px; display: flex; gap: 6px; }
 .pm-pkg { border-bottom: 1px solid #e3e8ef; }
 .pm-pkg.sel { background: #f5f8fc; }
 .pm-row { display: flex; align-items: center; gap: 8px; padding: 8px 12px; cursor: pointer; }
