@@ -564,7 +564,7 @@ const masterOf = p => (JCR.get(AR(), p + '/jcr:content/data/master') || { props:
 const mpComps = () => [].concat(masterOf(MYSITE_PROJECTS).components || []).filter(Boolean);
 
 lesson({
-  id: 'headless', level: 2, num: '2.6', time: 40,
+  id: 'cfpages', level: 2, num: '2.6', time: 40,
   title: L('Headless pages with Content Fragments', 'Headless pages with Content Fragments'),
   goal: L('هتشتغل زي مشاريع الـ headless الكبيرة: الصفحة Content Fragment من model اسمه Page، الـ components fragments بتتشاور عليها بالترتيب، والـ frontend بيرسم الصفحة من GraphQL.', 'You will work like big headless projects do: a page is a Content Fragment of the Page model, its components are fragments referenced in order, and a frontend renders it from GraphQL.'),
   learn: L(`

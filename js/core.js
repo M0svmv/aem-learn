@@ -494,6 +494,7 @@ function desktopView() {
       <button class="btn quiet small" data-act="quickStartAll" title="Skip lesson #5">⚡ Skip: rename &amp; start both with defaults</button>
     </div>
     <div class="desk-grid">${instancePanel('author')}${instancePanel('publish')}</div>
+    ${typeof projectPanel === 'function' ? projectPanel() : ''}
   </div>`;
 }
 

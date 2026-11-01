@@ -362,7 +362,10 @@ git push → Cloud Manager pipeline:
     { t: L('في CRXDE لاقي أماكن الـ modules: <code>/apps/wknd/components</code> (ui.apps)', 'In CRXDE find module locations: <code>/apps/wknd/components</code> (ui.apps)'), ok: () => crxSeen(p => p === '/apps/wknd/components'), guide: [step('.ct-row[data-path="/apps/wknd/components"] .ct-name', 'ده ui.apps.', 'This is ui.apps.', { at: '/crx/de', go: '/crx/de/index.jsp#/apps/wknd/components' })] },
     { t: L('<code>/apps/wknd/osgiconfig</code> (ui.config)', '<code>/apps/wknd/osgiconfig</code> (ui.config)'), ok: () => crxSeen(p => p === '/apps/wknd/osgiconfig'), guide: [step('.ct-row[data-path="/apps/wknd/osgiconfig"] .ct-name', 'ده ui.config.', 'This is ui.config.', { at: '/crx/de', go: '/crx/de/index.jsp#/apps/wknd/osgiconfig' })] },
     { t: L('<code>/conf/wknd/settings/wcm/templates</code> (ui.content)', '<code>/conf/wknd/settings/wcm/templates</code> (ui.content)'), ok: () => crxSeen(p => p === TPL_ROOT), guide: [step(`.ct-row[data-path="${TPL_ROOT}"] .ct-name`, 'ده جزء من ui.content.', 'This is part of ui.content.', { at: '/crx/de', go: '/crx/de/index.jsp#' + TPL_ROOT })] },
-    { t: L('ارفع <code>wknd.all</code> في Package Manager وشوف الـ sub packages بتتثبّت بالترتيب', 'Upload <code>wknd.all</code> in Package Manager and watch the sub packages install in order'), ok: () => !!S.events['pkg:installed:wknd.all'], guide: [step('[data-act="pkgUpload"]', 'Upload Package ← اختار <code>wknd.all-1.0.0-SNAPSHOT.zip</code> (أو دوس Upload the sample) ← Install.', 'Upload Package → choose <code>wknd.all-1.0.0-SNAPSHOT.zip</code> (or press Upload the sample) → Install.', { at: '/crx/packmgr', go: '/crx/packmgr/index.jsp' })] },
+    { t: L('اعمل deploy زي الـ developer: <code>mvn clean install -PautoInstallSinglePackage</code>، وبعدين شوف الـ sub packages في Package Manager', 'Deploy like a developer: <code>mvn clean install -PautoInstallSinglePackage</code>, then see the sub packages in Package Manager'), why: L('الـ profile ده بيعمل build ويبعت <code>wknd.all</code> للـ Author على 4502 في خطوة واحدة. لو الـ Author مقفول هتشوف <code>Connection refused</code>.', 'This profile builds and posts <code>wknd.all</code> to the Author on 4502 in one go. With the Author stopped you get <code>Connection refused</code>.'), ok: () => F('mvn:deploy:author') && !!S.events['pkg:installed:wknd.all'], guide: [
+      step('.term-in[data-k="project"] input[name=cmd]', 'في تاب <b>Desktop</b> عند <code>F:\\projects\\wknd</code> اكتب <code>mvn clean install -PautoInstallSinglePackage</code> ودوس Enter. استنى <b>BUILD SUCCESS</b> ودوس التالي.', 'In the <b>Desktop</b> tab at <code>F:\\projects\\wknd</code> type <code>mvn clean install -PautoInstallSinglePackage</code> and press Enter. Wait for <b>BUILD SUCCESS</b>, then press Next.', { tab: 'desktop', next: true, fill: 'mvn clean install -PautoInstallSinglePackage' }),
+      step('.pm-row[data-act="pkgSel"] ~ wknd.all', 'في Package Manager اختار <b>wknd.all</b>: هتلاقي الـ Sub packages تحت.', 'In Package Manager select <b>wknd.all</b>: its Sub packages are listed below.', { at: '/crx/packmgr', go: '/crx/packmgr/index.jsp', next: true }),
+    ] },
     { t: L('شوف الـ packages المتثبّتة في <code>/etc/packages</code>', 'See installed packages in <code>/etc/packages</code>'), ok: () => crxSeen(p => p.startsWith('/etc/packages')), guide: [step('.ct-row[data-path="/etc/packages"] .ct-name', 'كل package متسجل هنا كملف zip.', 'Every package is stored here as a zip.', { at: '/crx/de', go: '/crx/de/index.jsp#/etc/packages' })] },
   ],
   quiz: [
@@ -372,12 +375,211 @@ git push → Cloud Manager pipeline:
   ],
 });
 
+/* ---------- 6.6 · 6.7: the Maven project on the Desktop tab (js/project.js) ---------- */
+
+const PROJ_IN = '.term-in[data-k="project"] input[name=cmd]';
+// a command typed in the project terminal: "Type it for me" fills it, Next moves on once its output is read
+const mvnType = (cmd, ar, en) => step(PROJ_IN, ar, en, { tab: 'desktop', next: true, fill: cmd });
+const mvnButton = (cmd, ar, en) => step(`[data-act="mvnRun"][data-cmd="${cmd}"]`, ar, en, { tab: 'desktop' });
+const crxNode = (parent, name) => [
+  step(`.ct-row[data-path="${parent}"] .ct-name`, `اختار <code>${parent}</code> في الشجرة.`, `Select <code>${parent}</code> in the tree.`, { at: '/crx/de', go: '/crx/de/index.jsp#' + parent }),
+  step('.crx-create summary', 'افتح قايمة <b>Create</b>.', 'Open the <b>Create</b> menu.', { at: '/crx/de' }),
+  step('[data-act="crxNewNode"]', 'اختار <b>Create Node…</b>.', 'Choose <b>Create Node…</b>.', { at: '/crx/de' }),
+  step('.modal input[name=name]', `اكتب <code>${name}</code>.`, `Type <code>${name}</code>.`, { at: '/crx/de', next: true, fill: name }),
+  step('.modal [data-modal=ok]', 'دوس <b>Create</b>.', 'Press <b>Create</b>.', { at: '/crx/de' }),
+];
+
+lesson({
+  id: 'maven', level: 6, num: '6.6', time: 30,
+  title: L('Building the project with Maven', 'Building the project with Maven'),
+  goal: L('هتشتغل على مشروع WKND زي ما بتشتغل على جهازك: تقرا هيكله، تعمل build بـ Maven، وتفهم الـ target والـ lifecycle وأخطاء الـ build المشهورة.', 'You will work on the WKND project the way you do on your laptop: read its layout, build it with Maven, and understand target folders, the lifecycle and the common build errors.'),
+  learn: L(`
+<h4>المشروع على جهازك</h4>
+<p>المشروع الحقيقي مش جوه AEM. هو فولدر على جهازك جاي من <b>Git</b> (<code>git clone</code>)، وفيه <code>pom.xml</code> في الـ root وفولدر لكل module. في الـ lab هتلاقيه في تاب <b>Desktop</b> تحت الـ instances: <code>F:\\projects\\wknd</code>.</p>
+<pre class="ls-diagram">F:\\projects\\wknd
+├── pom.xml          ← الـ parent: بيعرّف الـ modules والـ versions والـ profiles
+├── core\\            ← Java → wknd.core-1.0.0-SNAPSHOT.jar
+├── ui.frontend\\     ← webpack → بيولّد clientlib-site جوه ui.apps
+├── ui.apps\\         ← /apps/wknd → wknd.ui.apps-….zip
+├── ui.config\\       ← OSGi configs → wknd.ui.config-….zip
+├── ui.content\\      ← /conf و /content → wknd.ui.content-….zip
+├── all\\             ← بيجمع الكل → wknd.all-1.0.0-SNAPSHOT.zip
+└── dispatcher\\</pre>
+<h4>Maven في سطرين</h4>
+<p><b>Maven</b> بيقرا الـ <code>pom.xml</code> ويبني كل module بالترتيب اللي محتاجه (الـ <b>Reactor Build Order</b>). كل build بيمشي في <b>lifecycle</b>:</p>
+<pre class="ls-diagram">clean      ← يمسح فولدرات target
+compile    ← Java في core
+test       ← unit tests
+package    ← يطلّع الـ jar / zip في target
+install    ← ينسخه كمان لـ ~/.m2 (local repository)</pre>
+<p>لما تكتب phase، Maven بيعمل كل اللي قبلها. يعني <code>mvn clean install</code> = امسح، وابني كل حاجة من الأول، وحطها في <code>.m2</code>.</p>
+<h4>فولدر target</h4>
+<p>ده الـ <b>output</b> بتاع الـ build، ومش بيتحط في Git أبداً (موجود في <code>.gitignore</code>). عشان كده بعد <code>git clone</code> مفيش zip تعمله upload: لازم تعمل build الأول.</p>
+<h4>SNAPSHOT</h4>
+<p><code>1.0.0-SNAPSHOT</code> معناها نسخة لسه بتتطوّر. لما الفريق يعمل release بيبقى <code>1.0.0</code>، وده اللي بيروح production.</p>
+<h4>Build لـ module واحد</h4>
+<p>لو غيّرت في ui.apps بس، مش لازم تبني المشروع كله: ادخل فولدر الـ module (<code>cd ui.apps</code>) واعمل build هناك. وفيه طريقة تانية من الـ root: <code>mvn clean install -pl ui.apps</code>.</p>
+<h4>أخطاء هتشوفها كتير</h4>
+<table class="ls-table">
+<tr><th>الرسالة</th><th>معناها</th></tr>
+<tr><td><code>there is no POM in this directory</code></td><td>انت مش في فولدر المشروع أو الـ module</td></tr>
+<tr><td><code>Unknown lifecycle phase</code></td><td>اسم phase غلط (مثلاً <code>mvn instal</code>)</td></tr>
+<tr><td><code>Connection refused</code></td><td>الـ build بيحاول يعمل deploy والـ AEM مقفول (درس 6.7)</td></tr>
+</table>`, `
+<h4>The project on your laptop</h4>
+<p>The real project is not inside AEM. It is a folder on your machine that comes from <b>Git</b> (<code>git clone</code>), with a <code>pom.xml</code> at the root and one folder per module. In the lab it is in the <b>Desktop</b> tab under the instances: <code>F:\\projects\\wknd</code>.</p>
+<pre class="ls-diagram">F:\\projects\\wknd
+├── pom.xml          ← the parent: declares modules, versions and profiles
+├── core\\            ← Java → wknd.core-1.0.0-SNAPSHOT.jar
+├── ui.frontend\\     ← webpack → generates clientlib-site inside ui.apps
+├── ui.apps\\         ← /apps/wknd → wknd.ui.apps-….zip
+├── ui.config\\       ← OSGi configs → wknd.ui.config-….zip
+├── ui.content\\      ← /conf and /content → wknd.ui.content-….zip
+├── all\\             ← bundles everything → wknd.all-1.0.0-SNAPSHOT.zip
+└── dispatcher\\</pre>
+<h4>Maven in two lines</h4>
+<p><b>Maven</b> reads <code>pom.xml</code> and builds each module in the order they need (the <b>Reactor Build Order</b>). Every build walks a <b>lifecycle</b>:</p>
+<pre class="ls-diagram">clean      ← delete the target folders
+compile    ← the Java in core
+test       ← unit tests
+package    ← produce the jar / zip in target
+install    ← also copy it to ~/.m2 (local repository)</pre>
+<p>Naming a phase runs every phase before it. So <code>mvn clean install</code> = wipe, rebuild everything, and put it in <code>.m2</code>.</p>
+<h4>The target folder</h4>
+<p>This is the build <b>output</b>, and it never goes to Git (it is in <code>.gitignore</code>). That is why after <code>git clone</code> there is no zip to upload: you must build first.</p>
+<h4>SNAPSHOT</h4>
+<p><code>1.0.0-SNAPSHOT</code> means a version still in development. A release becomes <code>1.0.0</code>, and that is what goes to production.</p>
+<h4>Building one module</h4>
+<p>If you only changed ui.apps you don't need the whole project: go into the module folder (<code>cd ui.apps</code>) and build there. From the root, <code>mvn clean install -pl ui.apps</code> does the same.</p>
+<h4>Errors you will see a lot</h4>
+<table class="ls-table">
+<tr><th>Message</th><th>Meaning</th></tr>
+<tr><td><code>there is no POM in this directory</code></td><td>You are not in the project or a module folder</td></tr>
+<tr><td><code>Unknown lifecycle phase</code></td><td>A misspelled phase (e.g. <code>mvn instal</code>)</td></tr>
+<tr><td><code>Connection refused</code></td><td>The build tries to deploy and AEM is not running (lesson 6.7)</td></tr>
+</table>`),
+  terms: [
+    ['pom.xml', L('ملف Maven: الـ modules والـ dependencies والـ plugins والـ profiles.', 'The Maven file: modules, dependencies, plugins and profiles.')],
+    ['Reactor', L('الجزء من Maven اللي بيرتّب الـ modules ويبنيهم بالترتيب.', 'The part of Maven that orders the modules and builds them in turn.')],
+    ['target', L('فولدر الـ output في كل module. مش بيتحط في Git.', 'Each module\'s output folder. Never committed.')],
+    ['~/.m2', L('الـ local repository: نسخ من كل artifact عملته install أو نزّلته.', 'The local repository: copies of every artifact you installed or downloaded.')],
+  ],
+  real: L('<ul><li>أول حاجة بعد <code>git clone</code> أو <code>git pull</code>: <code>mvn clean install</code> من الـ root.</li><li>الـ build الكامل ممكن ياخد دقايق بسبب ui.frontend (npm). وانت شغال على HTL بس، ابني ui.apps لوحده.</li><li>لو الـ build وقع، اقرا أول <code>[ERROR]</code> مش آخر واحد.</li></ul>', '<ul><li>First thing after <code>git clone</code> or <code>git pull</code>: <code>mvn clean install</code> from the root.</li><li>A full build can take minutes because of ui.frontend (npm). When you only touch HTL, build ui.apps alone.</li><li>When a build fails, read the first <code>[ERROR]</code>, not the last.</li></ul>'),
+  tasks: [
+    { t: L('في تاب Desktop اعمل <code>git status</code> في المشروع', 'In the Desktop tab run <code>git status</code> in the project'), why: L('الـ working tree نضيف: الكود في Git، ومفيش build output.', 'The working tree is clean: the code is in Git, and there is no build output.'), ok: () => F('proj:git:status'), guide: [mvnType('git status', 'انزل لـ <code>F:\\projects\\wknd</code> في تاب <b>Desktop</b>، اكتب <code>git status</code> ودوس Enter، وبعدين التالي.', 'Scroll to <code>F:\\projects\\wknd</code> in the <b>Desktop</b> tab, type <code>git status</code>, press Enter, then Next.')] },
+    { t: L('اعرف نسخة Maven و Java: <code>mvn -v</code>', 'Check the Maven and Java versions: <code>mvn -v</code>'), ok: () => F('mvn:version'), guide: [mvnType('mvn -v', 'اكتب <code>mvn -v</code> ودوس Enter.', 'Type <code>mvn -v</code> and press Enter.')] },
+    { t: L('اعرض محتوى المشروع بـ <code>dir</code>: الـ modules والـ <code>pom.xml</code>', 'List the project with <code>dir</code>: the modules and <code>pom.xml</code>'), why: L('لاحظ إن مفيش ولا فولدر target.', 'Notice there is no target folder anywhere.'), ok: () => F('proj:dir:f:\\projects\\wknd'), guide: [mvnType('dir', 'اكتب <code>dir</code> ودوس Enter.', 'Type <code>dir</code> and press Enter.')] },
+    { t: L('ابني المشروع كله: <code>mvn clean install</code>', 'Build the whole project: <code>mvn clean install</code>'), why: L('اقرا الـ Reactor Build Order: core الأول، و all في الآخر عشان بيجمع اللي قبله.', 'Read the Reactor Build Order: core first, all last because it bundles the others.'), ok: () => F('mvn:build:reactor'), guide: [mvnType('mvn clean install', 'اكتب <code>mvn clean install</code> ودوس Enter. استنى <b>BUILD SUCCESS</b>.', 'Type <code>mvn clean install</code> and press Enter. Wait for <b>BUILD SUCCESS</b>.')] },
+    { t: L('شوف الـ output: <code>dir ui.content\\target</code>', 'Look at the output: <code>dir ui.content\\target</code>'), ok: () => F('proj:dir:f:\\projects\\wknd\\ui.content\\target'), guide: [mvnType('dir ui.content\\target', 'اكتب <code>dir ui.content\\target</code>: ده الـ zip اللي بيتعمله deploy.', 'Type <code>dir ui.content\\target</code>: that zip is what gets deployed.')] },
+    { t: L('امسح الـ output: <code>mvn clean</code>', 'Wipe the output: <code>mvn clean</code>'), why: L('بص على جدول الـ modules فوق: الـ target اختفت.', 'Watch the modules table above: the targets are gone.'), ok: () => F('mvn:clean'), guide: [mvnType('mvn clean', 'اكتب <code>mvn clean</code> ودوس Enter.', 'Type <code>mvn clean</code> and press Enter.')] },
+    { t: L('ابني <b>ui.apps</b> لوحده من فولدره', 'Build <b>ui.apps</b> alone from its folder'), ok: () => F('mvn:build:module:ui.apps'), guide: [
+      mvnType('cd ui.apps', 'اكتب <code>cd ui.apps</code>.', 'Type <code>cd ui.apps</code>.'),
+      mvnType('mvn clean install', 'اكتب <code>mvn clean install</code>: هتلاقي module واحد بس اتبنى.', 'Type <code>mvn clean install</code>: only one module is built.'),
+    ] },
+    { t: L('اعمل الغلطة المشهورة: شغّل <code>mvn</code> من فولدر مفيهوش <code>pom.xml</code>', 'Make the classic mistake: run <code>mvn</code> where there is no <code>pom.xml</code>'), why: L('هتشوف <code>there is no POM in this directory</code>. لما تشوفها، اتأكد إنت في أنهي فولدر.', 'You get <code>there is no POM in this directory</code>. When you see it, check which folder you are in.'), ok: () => F('mvn:nopom'), guide: [
+      mvnType('cd target', 'اكتب <code>cd target</code>.', 'Type <code>cd target</code>.'),
+      mvnType('mvn install', 'اكتب <code>mvn install</code> واقرا الـ error.', 'Type <code>mvn install</code> and read the error.'),
+      mvnType('cd \\projects\\wknd', 'ارجع للـ root: <code>cd \\projects\\wknd</code>.', 'Go back to the root: <code>cd \\projects\\wknd</code>.'),
+    ] },
+  ],
+  quiz: [
+    { q: L('عملت <code>git clone</code> للمشروع ومش لاقي أي zip. ليه؟', 'You cloned the project and there is no zip anywhere. Why?'), a: [L('الـ clone فشل', 'The clone failed'), L('الـ zips بتطلع في target بعد الـ build، و target مش في Git', 'Zips appear in target after a build, and target is not in Git'), L('لازم تنزلهم من AEM', 'You must download them from AEM')], c: 1, why: L('target هو output الـ build، و.gitignore بيستبعده.', 'target is build output and .gitignore excludes it.') },
+    { q: L('<code>mvn package</code> و <code>mvn install</code>: الفرق؟', '<code>mvn package</code> vs <code>mvn install</code>: the difference?'), a: [L('مفيش فرق', 'None'), L('install بيعمل package وكمان بينسخ الـ artifact لـ ~/.m2', 'install packages and also copies the artifact to ~/.m2'), L('install بيرفع على AEM', 'install uploads to AEM')], c: 1, why: L('الـ deploy على AEM بييجي من الـ profiles، مش من install نفسه.', 'Deploying to AEM comes from profiles, not from install itself.') },
+    { q: L('غيّرت HTL في ui.apps بس. أسرع build؟', 'You only changed HTL in ui.apps. Fastest build?'), a: [L('mvn clean install من الـ root', 'mvn clean install from the root'), L('cd ui.apps وبعدين mvn clean install', 'cd ui.apps, then mvn clean install'), L('git pull', 'git pull')], c: 1, why: L('module واحد بدل المشروع كله (وأهمه ui.frontend البطيء).', 'One module instead of the whole project (especially the slow ui.frontend).') },
+  ],
+});
+
+const HOTFIX = '/apps/wknd/components/hotfix';
+const AUTHOR_NOTES = SITE_ROOT + '/author-notes';
+const loopDone = i => ((S.tasksDone || {})['deployloop:' + i]) || 0;
+const deployedAt = key => S.events['mvn:deploy:' + key + ':last'] || 0;
+
+lesson({
+  id: 'deployloop', level: 6, num: '6.7', time: 30,
+  title: L('The developer loop: deploy with Maven profiles', 'The developer loop: deploy with Maven profiles'),
+  goal: L('هتعمل deploy من المشروع لـ AEM بالـ profiles زي الـ developers كل يوم، وتشوف بعينك ليه أي تعديل في CRXDE بيضيع، وليه محتوى الـ authors مش بيضيع.', 'You will deploy from the project to AEM with profiles the way developers do every day, and see why CRXDE edits get lost while authors\' content survives.'),
+  learn: L(`
+<h4>من الـ build للـ AEM في خطوة</h4>
+<p>بدل ما تعمل build وبعدين تفتح Package Manager وترفع الـ zip بإيدك (درس 4.4)، المشروع فيه <b>profiles</b> بتعمل الاتنين مع بعض. الـ plugin (<code>content-package-maven-plugin</code>) بيبعت الـ zip لـ <code>http://localhost:4502/crx/packmgr/service.jsp</code> بالـ admin/admin.</p>
+<table class="ls-table">
+<tr><th>Profile</th><th>بيعمل إيه</th></tr>
+<tr><td><code>-PautoInstallSinglePackage</code></td><td><b>wknd.all</b> للـ Author (4502). ده الأشهر.</td></tr>
+<tr><td><code>-PautoInstallSinglePackagePublish</code></td><td>نفس الكلام للـ Publish (4503).</td></tr>
+<tr><td><code>-PautoInstallPackage</code></td><td>كل package لوحده. من فولدر module = الـ module ده بس.</td></tr>
+<tr><td><code>-PautoInstallBundle</code></td><td>الـ Java bundle بتاع core بس (في الحقيقة).</td></tr>
+</table>
+<p>الـ AEM لازم يكون شغال على البورت ده، وإلا هتشوف <code>Connection refused</code> والـ build يقع.</p>
+<h4>ليه تعديلات CRXDE بتضيع</h4>
+<p>filter الـ ui.apps على <code>/apps/wknd/components</code> نوعه <b>replace</b>: الـ package بيبقى الحقيقة الوحيدة. أي node عملته بإيدك في CRXDE تحت <code>/apps</code> ومش موجود في Git بيتمسح مع أول deploy. حتى الـ herobanner اللي عملته في درس 6.2 هيتمسح، لأنه مش في المشروع.</p>
+<h4>ليه محتوى الـ authors مش بيضيع</h4>
+<p>filter الـ ui.content على <code>/content/wknd</code> نوعه <b>merge</b>: بيضيف اللي ناقص بس، ومابيمسحش حاجة موجودة. عشان كده الصفحات اللي عملها الـ authors بتفضل.</p>
+<pre class="ls-diagram">عدّل الكود في IDE ← mvn clean install -PautoInstallSinglePackage ← جرّب على 4502
+         ↑                                                         │
+         └──────────────────── لو فيه مشكلة ───────────────────────┘
+لما يخلص: git commit ← git push ← Cloud Manager pipeline ← Dev ← Stage ← Prod</pre>`, `
+<h4>From build to AEM in one step</h4>
+<p>Instead of building, then opening Package Manager and uploading the zip by hand (lesson 4.4), the project has <b>profiles</b> that do both. The plugin (<code>content-package-maven-plugin</code>) posts the zip to <code>http://localhost:4502/crx/packmgr/service.jsp</code> as admin/admin.</p>
+<table class="ls-table">
+<tr><th>Profile</th><th>What it does</th></tr>
+<tr><td><code>-PautoInstallSinglePackage</code></td><td><b>wknd.all</b> to the Author (4502). The most used one.</td></tr>
+<tr><td><code>-PautoInstallSinglePackagePublish</code></td><td>The same to the Publish (4503).</td></tr>
+<tr><td><code>-PautoInstallPackage</code></td><td>Each package on its own. From a module folder: just that module.</td></tr>
+<tr><td><code>-PautoInstallBundle</code></td><td>Just the core Java bundle (in real projects).</td></tr>
+</table>
+<p>AEM must be running on that port, or you get <code>Connection refused</code> and the build fails.</p>
+<h4>Why CRXDE edits get lost</h4>
+<p>The ui.apps filter on <code>/apps/wknd/components</code> is <b>replace</b>: the package is the only truth. Any node you made by hand in CRXDE under <code>/apps</code> that is not in Git is deleted by the next deploy. Even the herobanner you built in lesson 6.2 goes, because it is not in the project.</p>
+<h4>Why authors' content survives</h4>
+<p>The ui.content filter on <code>/content/wknd</code> is <b>merge</b>: it only adds what is missing and never deletes what exists. So pages authors created stay.</p>
+<pre class="ls-diagram">edit code in the IDE → mvn clean install -PautoInstallSinglePackage → try it on 4502
+         ↑                                                            │
+         └──────────────────────── if something is wrong ─────────────┘
+when done: git commit → git push → Cloud Manager pipeline → Dev → Stage → Prod</pre>`),
+  terms: [
+    ['Maven profile', L('مجموعة إعدادات بتتفعّل بـ <code>-P</code>، زي autoInstallSinglePackage.', 'A set of settings switched on with <code>-P</code>, like autoInstallSinglePackage.')],
+    ['content-package-maven-plugin', L('الـ plugin اللي بيرفع الـ zip لـ Package Manager.', 'The plugin that uploads the zip to Package Manager.')],
+    ['Connection refused', L('مفيش حاجة شغالة على البورت ده.', 'Nothing is listening on that port.')],
+  ],
+  real: L('<ul><li>أي تعديل في <code>/apps</code> اعمله في المشروع وادفعه لـ Git. اللي في CRXDE بس هيضيع، وزمايلك مش هيشوفوه.</li><li>في AEM as a Cloud Service مفيش autoInstall على البيئات: الـ deploy بيعدّي على Cloud Manager بس. الـ profiles دي للـ SDK على جهازك.</li><li>لو الـ deploy نجح والتعديل مش باين: clientlib cache أو Dispatcher cache، أو الـ module ماتبناش.</li></ul>', '<ul><li>Make every change to <code>/apps</code> in the project and push it to Git. A CRXDE-only edit gets lost, and your teammates never see it.</li><li>On AEM as a Cloud Service there is no autoInstall to environments: deploys go through Cloud Manager only. These profiles are for the SDK on your laptop.</li><li>Deploy succeeded but the change is not visible? Check the clientlib cache, the Dispatcher cache, or whether the module was built at all.</li></ul>'),
+  tasks: [
+    { t: L('اقفل الـ Author واعمل deploy: <code>-PautoInstallSinglePackage</code>', 'Stop the Author and deploy: <code>-PautoInstallSinglePackage</code>'), why: L('هتشوف <code>Connection refused</code> و BUILD FAILURE: الـ build نجح بس الـ deploy مالقاش AEM.', 'You get <code>Connection refused</code> and BUILD FAILURE: the build worked but the deploy found no AEM.'), ok: () => !!S.events['mvn:refused'], guide: [
+      step('[data-act="stopInst"][data-k="author"]', 'في تاب <b>Desktop</b> دوس <b>Stop</b> تحت الـ Author.', 'In the <b>Desktop</b> tab press <b>Stop</b> under the Author.', { tab: 'desktop' }),
+      mvnButton('mvn clean install -PautoInstallSinglePackage', 'انزل للمشروع ودوس <b>▶ … -PautoInstallSinglePackage</b>.', 'Scroll to the project and press <b>▶ … -PautoInstallSinglePackage</b>.'),
+      step('#term-project', 'استنى الآخر واقرا الـ <code>[ERROR]</code>.', 'Wait for the end and read the <code>[ERROR]</code>.', { tab: 'desktop', next: true }),
+    ] },
+    { t: L('شغّل الـ Author تاني واعمل نفس الـ deploy', 'Start the Author again and run the same deploy'), ok: () => !!S.events['mvn:refused'] && deployedAt('author') > S.events['mvn:refused'], guide: [
+      step('[data-act="quickStartAll"]', 'دوس <b>⚡ Skip: rename &amp; start both</b> فوق عشان تشغّل الـ Author.', 'Press <b>⚡ Skip: rename &amp; start both</b> at the top to start the Author.', { tab: 'desktop' }),
+      mvnButton('mvn clean install -PautoInstallSinglePackage', 'دوس <b>▶ … -PautoInstallSinglePackage</b> تاني: المرة دي <code>Package installed</code>.', 'Press <b>▶ … -PautoInstallSinglePackage</b> again: this time <code>Package installed</code>.'),
+    ] },
+    { t: L('"Hotfix" في CRXDE: اعمل node اسمه <code>hotfix</code> تحت <code>/apps/wknd/components</code>', 'A CRXDE "hotfix": create a node <code>hotfix</code> under <code>/apps/wknd/components</code>'), ok: () => !!JCR.get(AR(), HOTFIX), guide: crxNode('/apps/wknd/components', 'hotfix') },
+    { t: L('اعمل deploy لـ <b>ui.apps</b> بس من فولدره (<code>-PautoInstallPackage</code>): الـ hotfix اتمسح', 'Deploy <b>ui.apps</b> alone from its folder (<code>-PautoInstallPackage</code>): the hotfix is gone'), why: L('ui.apps بـ replace: اللي مش في Git بيتمسح.', 'ui.apps uses replace: whatever is not in Git is removed.'), ok: () => loopDone(2) > 0 && !JCR.get(AR(), HOTFIX) && deployedAt('author:ui.apps') > loopDone(2), guide: [
+      mvnType('cd \\projects\\wknd\\ui.apps', 'في تاب <b>Desktop</b> اكتب <code>cd \\projects\\wknd\\ui.apps</code>.', 'In the <b>Desktop</b> tab type <code>cd \\projects\\wknd\\ui.apps</code>.'),
+      mvnType('mvn clean install -PautoInstallPackage', 'اكتب <code>mvn clean install -PautoInstallPackage</code> واستنى BUILD SUCCESS.', 'Type <code>mvn clean install -PautoInstallPackage</code> and wait for BUILD SUCCESS.'),
+      step('.ct-row[data-path="/apps/wknd/components"] .ct-name', 'في CRXDE بص على <code>/apps/wknd/components</code>: مفيش hotfix.', 'In CRXDE look at <code>/apps/wknd/components</code>: no hotfix.', { at: '/crx/de', go: '/crx/de/index.jsp#/apps/wknd/components', next: true }),
+    ] },
+    { t: L('اعمل محتوى زي الـ author: node اسمه <code>author-notes</code> تحت <code>/content/wknd/us/en</code>', 'Make content like an author: a node <code>author-notes</code> under <code>/content/wknd/us/en</code>'), ok: () => !!JCR.get(AR(), AUTHOR_NOTES), guide: crxNode(SITE_ROOT, 'author-notes') },
+    { t: L('اعمل deploy للمشروع كله تاني: <code>author-notes</code> لسه موجود', 'Deploy the whole project again: <code>author-notes</code> is still there'), why: L('ui.content بـ merge: بيضيف ومابيمسحش.', 'ui.content uses merge: it adds and never deletes.'), ok: () => loopDone(4) > 0 && !!JCR.get(AR(), AUTHOR_NOTES) && deployedAt('author:all') > loopDone(4), guide: [
+      mvnButton('mvn clean install -PautoInstallSinglePackage', 'في تاب <b>Desktop</b> دوس <b>▶ … -PautoInstallSinglePackage</b>.', 'In the <b>Desktop</b> tab press <b>▶ … -PautoInstallSinglePackage</b>.'),
+      step(`.ct-row[data-path="${AUTHOR_NOTES}"] .ct-name`, 'في CRXDE: <code>author-notes</code> لسه هنا.', 'In CRXDE: <code>author-notes</code> is still here.', { at: '/crx/de', go: '/crx/de/index.jsp#' + AUTHOR_NOTES, next: true }),
+    ] },
+    { t: L('اعمل deploy للـ Publish: <code>-PautoInstallSinglePackagePublish</code>', 'Deploy to Publish: <code>-PautoInstallSinglePackagePublish</code>'), why: L('على جهازك الـ Publish محتاج نفس الكود عشان يعرض الصفحات صح.', 'On your laptop the Publish needs the same code to render pages right.'), ok: () => F('mvn:deploy:publish'), guide: [
+      mvnType('cd \\projects\\wknd', 'في تاب <b>Desktop</b> ارجع للـ root: <code>cd \\projects\\wknd</code>.', 'In the <b>Desktop</b> tab go back to the root: <code>cd \\projects\\wknd</code>.'),
+      mvnType('mvn clean install -PautoInstallSinglePackagePublish', 'اكتب <code>mvn clean install -PautoInstallSinglePackagePublish</code>.', 'Type <code>mvn clean install -PautoInstallSinglePackagePublish</code>.'),
+    ] },
+  ],
+  quiz: [
+    { q: L('<code>mvn clean install -PautoInstallSinglePackage</code> طلّع <code>Connection refused</code>. أول حاجة تعملها؟', '<code>mvn clean install -PautoInstallSinglePackage</code> says <code>Connection refused</code>. First check?'), a: [L('تمسح ~/.m2', 'Delete ~/.m2'), L('تتأكد إن الـ Author شغال على 4502', 'Make sure the Author runs on 4502'), L('تغيّر الـ Java', 'Change Java')], c: 1, why: L('الـ plugin مالقاش حد بيسمع على البورت.', 'The plugin found nothing listening on the port.') },
+    { q: L('صلّحت bug في HTL من CRXDE على جهازك، وبعدها عملت deploy. التصليح راح فين؟', 'You fixed an HTL bug in CRXDE locally, then deployed. Where did the fix go?'), a: [L('موجود', 'Still there'), L('اتمسح: ui.apps بـ replace والتصليح مش في Git', 'Gone: ui.apps uses replace and the fix is not in Git'), L('اتنقل لـ /libs', 'Moved to /libs')], c: 1, why: L('اعمل التعديل في المشروع، مش في CRXDE.', 'Make the change in the project, not in CRXDE.') },
+    { q: L('ليه صفحات الـ authors مش بتتمسح مع كل deploy؟', 'Why don\'t authors\' pages vanish on every deploy?'), a: [L('عشان ui.content بـ merge', 'Because ui.content uses merge'), L('عشان AEM بيعمل backup', 'Because AEM backs them up'), L('بتتمسح فعلاً', 'They do vanish')], c: 0, why: L('merge بيضيف اللي ناقص بس.', 'merge only adds what is missing.') },
+  ],
+});
+
 // the query to type is taken from the English text, so "Type it for me" can fill the box
 const qbType = (ar, en) => step('#qb-text', ar, en, { at: QB_URL, go: QB_URL, next: true, fill: en.replace(/<br>/g, '\n').replace(/<[^>]+>/g, '').replace(/^Type:\s*/, '').replace(/&amp;/g, '&') });
 const qbSearch = step('[data-act="qbRun"]', 'دوس <b>Search</b> وبص على النتايج والـ XPath.', 'Press <b>Search</b> and look at the results and the XPath.', { at: QB_URL });
 
 lesson({
-  id: 'querybuilder', level: 6, num: '6.6', time: 30,
+  id: 'querybuilder', level: 6, num: '6.8', time: 30,
   title: L('Searching content: QueryBuilder', 'Searching content: QueryBuilder'),
   goal: L('هتكتب queries بالـ QueryBuilder، تقرا الـ XPath اللي بيتولد، وتعرف إمتى الـ query تبقى بطيئة.', 'You will write QueryBuilder queries, read the generated XPath, and know when a query becomes slow.'),
   learn: L(`
@@ -443,7 +645,7 @@ p.hits=selective  p.properties=jcr:path jcr:content/jcr:title
 });
 
 lesson({
-  id: 'headless', level: 6, num: '6.7', time: 30,
+  id: 'headless', level: 6, num: '6.9', time: 30,
   title: L('Headless AEM & Next.js', 'Headless AEM & Next.js'),
   goal: L('هتختار بين headful و headless و hybrid، وتعرف Next.js بيجيب المحتوى من AEM إزاي.', 'You will choose between headful, headless and hybrid, and know how Next.js fetches content from AEM.'),
   learn: L(`
@@ -501,7 +703,7 @@ return data.adventureList.items.map(a => &lt;Card {...a} /&gt;);</pre>
 });
 
 lesson({
-  id: 'bestpractices', level: 6, num: '6.8', time: 25,
+  id: 'bestpractices', level: 6, num: '6.10', time: 25,
   title: L('Security, performance & troubleshooting', 'Security, performance & troubleshooting'),
   goal: L('هتعرف أهم قواعد الأمان والأداء، وتتبع أي مشكلة بخطوات ثابتة.', 'You will know the key security and performance rules and trace any problem step by step.'),
   learn: L(`
@@ -552,7 +754,7 @@ lesson({
 });
 
 lesson({
-  id: 'sitecore', level: 6, num: '6.9', time: 25,
+  id: 'sitecore', level: 6, num: '6.11', time: 25,
   title: L('From Sitecore to AEM', 'From Sitecore to AEM'),
   goal: L('هتربط كل مفهوم Sitecore تعرفه بمقابله في AEM، وتعرف أهم فروقات الـ migration.', 'You will map each Sitecore concept you know to its AEM counterpart and know the key migration differences.'),
   learn: L(`

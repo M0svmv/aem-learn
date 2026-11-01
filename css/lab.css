@@ -651,8 +651,6 @@ table.props td.val { font-family: "Courier New", monospace; word-break: break-al
 .pm-right { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .pm-list { flex: 1; overflow: auto; }
 .pm-empty { padding: 30px; color: #555; line-height: 1.7; }
-.pm-sample { margin-top: 12px; padding: 10px 12px; border: 1px dashed #b6c9e8; border-radius: 6px; background: #f5f9ff; font-size: 13px; line-height: 1.5; }
-.pm-sample div { margin-top: 8px; display: flex; gap: 6px; }
 .pm-pkg { border-bottom: 1px solid #e3e8ef; }
 .pm-pkg.sel { background: #f5f8fc; }
 .pm-row { display: flex; align-items: center; gap: 8px; padding: 8px 12px; cursor: pointer; }
@@ -1042,3 +1040,22 @@ table.files .btn { height: 24px; font-size: 12px; border-width: 1px; }
 .fe-json { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--gray-300); max-height: 45%; flex: none; overflow: hidden; }
 .fe-json > div { background: #fff; overflow: auto; padding: 8px 12px; min-height: 0; }
 .fe-json pre { margin: 6px 0 0; font: 12px/1.45 Consolas, monospace; white-space: pre-wrap; }
+
+/* project on the Desktop tab + the Upload Package file chooser */
+.proj-head { margin-top: 28px; }
+.proj { margin-top: 14px; }
+.proj table.files td code { font-size: 12px; }
+.fpick { border: 1px solid #d3d3d3; border-radius: 4px; overflow: hidden; }
+.fp-path { padding: 6px 10px; background: #f3f3f3; border-bottom: 1px solid #e1e1e1; font-family: Consolas, monospace; font-size: 12.5px; }
+.fp-list { max-height: 190px; overflow-y: auto; }
+.fp-row { display: flex; align-items: center; gap: 8px; padding: 5px 10px; font-size: 13px; cursor: pointer; border-bottom: 1px solid #f4f4f4; }
+.fp-row i { font-style: normal; }
+.fp-row span { margin-left: auto; color: #8a8a8a; font-size: 12px; }
+.fp-row:hover { background: #f0f6ff; }
+.fp-row.off { color: #9a9a9a; cursor: default; }
+.fp-row.off:hover { background: none; }
+.fp-row.sel { background: #e1ecff; font-weight: 600; }
+.fp-empty { padding: 10px; color: #8a8a8a; font-size: 13px; }
+.fp-picked { margin-top: 6px; font-size: 13px; }
+.fp-local { margin-top: 12px; }
+.fp-local span { font-size: 12px; }

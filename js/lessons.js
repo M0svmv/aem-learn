@@ -56,7 +56,7 @@ const LEVELS = [
   [3, L('الـ Templates والـ Front-end', 'Templates & Front-end'), L('editable templates، policies، clientlibs، Style System', 'Editable templates, policies, clientlibs, Style System')],
   [4, L('النشر والتشغيل', 'Publishing & Operations'), L('versions، replication، dispatcher، workflows، packages، الصلاحيات', 'Versions, replication, dispatcher, workflows, packages, permissions')],
   [5, L('مواقع ولغات متعددة', 'Multi-site & Languages'), L('MSM، live copies، launches، language copies', 'MSM, live copies, launches, language copies')],
-  [6, L('المطوّر والـ Architecture', 'Developer & Architecture'), L('Sling، تبني components بـ HTL، OSGi، QueryBuilder، Headless، Sitecore → AEM', 'Sling, building components with HTL, OSGi, QueryBuilder, headless, Sitecore → AEM')],
+  [6, L('المطوّر والـ Architecture', 'Developer & Architecture'), L('Sling، تبني components بـ HTL، OSGi، Maven والـ deploy، QueryBuilder، Headless، Sitecore → AEM', 'Sling, building components with HTL, OSGi, Maven & deploying, QueryBuilder, headless, Sitecore → AEM')],
   [7, L('المشروع النهائي', 'Capstone'), L('تبني campaign كاملة من الأول للآخر', 'Build a complete campaign end to end')],
 ];
 

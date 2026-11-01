@@ -468,29 +468,64 @@ function registerParsed(k, parsed, fileName) {
   return p.id;
 }
 
-A.pkgUpload = d => openModal({
-  title: 'Upload Package',
-  okLabel: 'OK',
-  body: `<label class="field"><span>Package (.zip)</span><input type="file" name="file" accept=".zip,application/zip"></label>
-    <label class="check"><input type="checkbox" name="install"> Install package after upload</label>
-    <p class="hint">Try your real Maven build (after <code>mvn clean install</code>): <code>&lt;project&gt;\\all\\target\\&lt;name&gt;.all-&lt;version&gt;.zip</code> contains ui.apps, ui.config and ui.content as sub packages, or upload one module, e.g. <code>&lt;project&gt;\\ui.content\\target\\&lt;name&gt;.ui.content-&lt;version&gt;.zip</code>.<br>Max 3 MB — everything is kept in your browser.</p>
-    <div class="pm-sample"><b>No project build?</b> Use the sample <code>${SAMPLE_PKG}</code>: the lab builds it from its own WKND project, with the same sub packages.
-      <div><button type="button" class="btn small primary" data-act="pkgSample" data-k="${d.k}">Upload the sample</button>
-      <button type="button" class="btn small quiet" data-act="pkgSampleDownload">Download it</button></div></div>`,
-  ok: b => {
-    const file = b.querySelector('input[type=file]').files[0];
-    const install = b.querySelector('[name=install]').checked;
-    if (!file) { toast('Choose a .zip file, or upload the sample.', 'error'); return false; }
-    if (file.size > 3 * 1024 * 1024) { toast('That package is larger than 3 MB.', 'error'); return false; }
-    closeModal();
-    uploadPackage(d.k, file.arrayBuffer(), file.name, install);
-    return false;
-  },
-});
+// The file chooser browses the lab's disk (F:\, with the project's target folders); a real .zip from the computer works too
+A.pkgUpload = d => {
+  const P = proj();
+  let cwd = PROJ_DIR + (P.built.all ? '\\all\\target' : '');
+  let picked = null;
+  const list = () => {
+    const items = projFs(cwd) || [];
+    const up = cwd.includes('\\') ? `<div class="fp-row" data-fp-dir=".."><i>📁</i> ..</div>` : '';
+    return up + items.map(e => e.dir
+      ? `<div class="fp-row" data-fp-dir="${esc(e.name)}"><i>📁</i> ${esc(e.name)}</div>`
+      : `<div class="fp-row ${/\.zip$/i.test(e.name) ? 'zip' : 'off'} ${picked === cwd + '\\' + e.name ? 'sel' : ''}" data-fp-file="${esc(e.name)}"><i>${/\.zip$/i.test(e.name) ? '📦' : '📄'}</i> ${esc(e.name)}<span>${esc(e.size || '')}</span></div>`).join('')
+      + (items.length ? '' : '<div class="fp-empty">This folder is empty.</div>');
+  };
+  const paint = b => {
+    b.querySelector('.fp-path').textContent = cwd;
+    b.querySelector('.fp-list').innerHTML = list();
+    b.querySelector('.fp-picked').innerHTML = picked ? `Selected: <code>${esc(picked)}</code>` : '<span class="muted">No file selected.</span>';
+  };
+  openModal({
+    title: 'Upload Package',
+    okLabel: 'OK',
+    body: `<div class="field"><span>Package (.zip)</span>
+        <div class="fpick"><div class="fp-path"></div><div class="fp-list"></div></div>
+        <div class="fp-picked"></div></div>
+      <label class="check"><input type="checkbox" name="install"> Install package after upload</label>
+      <p class="hint">Packages come from a Maven build: <code>mvn clean install</code> in <code>${esc(PROJ_DIR)}</code> (Desktop tab) writes <code>all\\target\\wknd.all-${PROJ_VERSION}.zip</code>, with ui.apps, ui.config and ui.content inside.</p>
+      <label class="field fp-local"><span>Or a .zip from your own computer (e.g. your real project's <code>all\\target</code>, max 3 MB)</span><input type="file" name="file" accept=".zip,application/zip"></label>`,
+    onMount: b => {
+      paint(b);
+      b.addEventListener('click', e => {
+        const dir = e.target.closest('[data-fp-dir]');
+        const file = e.target.closest('[data-fp-file]');
+        if (dir) { cwd = projResolve(cwd, dir.dataset.fpDir); paint(b); }
+        if (file && /\.zip$/i.test(file.dataset.fpFile)) { picked = cwd + '\\' + file.dataset.fpFile; b.querySelector('input[type=file]').value = ''; paint(b); }
+      });
+      b.querySelector('input[type=file]').addEventListener('change', () => { picked = null; paint(b); });
+    },
+    ok: b => {
+      const file = b.querySelector('input[type=file]').files[0];
+      const install = b.querySelector('[name=install]').checked;
+      if (picked) {
+        const m = picked.slice(PROJ_DIR.length + 1).split('\\')[0];
+        closeModal();
+        uploadPackage(d.k, projectZip(m).then(x => x.arrayBuffer()), JCR.name(picked.replace(/\\/g, '/')), install);
+        return false;
+      }
+      if (!file) { toast('Choose a .zip file. Nothing in a target folder? Build the project first (Desktop tab).', 'error'); return false; }
+      if (file.size > 3 * 1024 * 1024) { toast('That package is larger than 3 MB.', 'error'); return false; }
+      closeModal();
+      uploadPackage(d.k, file.arrayBuffer(), file.name, install);
+      return false;
+    },
+  });
+};
 
-function uploadPackage(k, bufPromise, fileName, install) {
-  toast('Reading package…');
-  Promise.resolve(bufPromise)
+// Registers a package from zip bytes (with its sub packages) and optionally installs it; resolves with the package
+function deployPackage(k, bufPromise, fileName, install) {
+  return Promise.resolve(bufPromise)
     .then(buf => ZIP.read(buf))
     .then(entries => VAULT.parse(entries))
     .then(parsed => {
@@ -500,64 +535,18 @@ function uploadPackage(k, bufPromise, fileName, install) {
       flag('pkg:uploaded');
       if (install) pkgInstall(k, p);
       commit();
-      toast(`Package <b>${esc(p.name)}</b> uploaded${install ? ' and installed' : ''}.`);
+      return p;
     })
     .catch(err => {
       pkgLog(k, `Upload failed: ${err.message}`, 'err');
-      toast('Upload failed: ' + esc(err.message), 'error');
       commit();
+      throw err;
     });
 }
 
-/* ---------- sample project package (what `mvn clean install` puts in all/target) ---------- */
-
-const SAMPLE_GROUP = 'com.adobe.aem.guides';
-const SAMPLE_VERSION = '1.0.0-SNAPSHOT';
-const SAMPLE_PKG = `wknd.all-${SAMPLE_VERSION}.zip`;
-
-// Built from a fresh seed, like the code in Git: author changes made in the lab are not in it.
-// ui.content holds only the site skeleton, so switching its /content/wknd filter to replace removes the other pages.
-async function samplePackageZip() {
-  const src = seedAuthor();
-  const site = JCR.get(src, SITE_ROOT);
-  site.children = site.children.filter(c => c.name === 'jcr:content');
-  const pkg = async (name, filters) => {
-    const content = JCR.node('', { 'jcr:primaryType': 'rep:root' });
-    for (const f of filters) {
-      const n = JCR.get(src, f.root);
-      if (!n) continue;
-      ensureAncestors(content, JCR.parent(f.root), src);
-      JCR.put(content, JCR.parent(f.root), JCR.clone(n));
-    }
-    const p = { name, group: SAMPLE_GROUP, version: SAMPLE_VERSION, desc: `${name} module of the WKND project`, filters, content, created: now() };
-    return new Uint8Array(await ZIP.write(VAULT.toFiles(p)).arrayBuffer());
-  };
-  const subs = [
-    ['wknd.ui.apps', [{ root: '/apps/wknd/components', mode: 'replace' }, { root: '/apps/wknd/clientlibs', mode: 'replace' }]],
-    ['wknd.ui.config', [{ root: '/apps/wknd/osgiconfig', mode: 'replace' }]],
-    ['wknd.ui.content', [{ root: '/conf/wknd', mode: 'merge' }, { root: '/content/wknd', mode: 'merge' }, { root: '/content/dam/wknd', mode: 'merge' }]],
-  ];
-  const all = { name: 'wknd.all', group: SAMPLE_GROUP, version: SAMPLE_VERSION, desc: 'WKND all-in-one package: embeds the module packages', filters: [{ root: '/apps/wknd-packages', mode: 'replace' }], content: JCR.node('', {}), created: now() };
-  const files = VAULT.toFiles(all);
-  for (const [name, filters] of subs) {
-    files.push({ name: `jcr_root/apps/wknd-packages/application/install/${name}-${SAMPLE_VERSION}.zip`, data: await pkg(name, filters) });
-  }
-  return ZIP.write(files);
+function uploadPackage(k, bufPromise, fileName, install) {
+  toast('Reading package…');
+  deployPackage(k, bufPromise, fileName, install)
+    .then(p => toast(`Package <b>${esc(p.name)}</b> uploaded${install ? ' and installed' : ''}.`))
+    .catch(err => toast('Upload failed: ' + esc(err.message), 'error'));
 }
-
-A.pkgSample = d => {
-  const install = !!document.querySelector('.modal [name=install]:checked');
-  closeModal();
-  uploadPackage(d.k, samplePackageZip().then(b => b.arrayBuffer()), SAMPLE_PKG, install);
-};
-
-A.pkgSampleDownload = () => {
-  samplePackageZip().then(blob => {
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = SAMPLE_PKG;
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
-  });
-};
