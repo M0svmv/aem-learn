@@ -18,7 +18,8 @@ function startGuide(lessonId, taskIndex) {
   const task = l && l.tasks[taskIndex];
   if (!task || !task.guide || !task.guide.length) return;
   stopGuide();
-  GUIDE = { l, task, i: 0, done: false };
+  // a task that is already done replays every step instead of finishing at once
+  GUIDE = { l, task, i: 0, done: false, replay: taskOk(task) };
   if (!S.ui.lessonsOpen) S.ui.lessonsOpen = true;
   ensureGuideDom();
   GUIDE_TIMER = setInterval(guideTick, 200);
@@ -115,6 +116,7 @@ function atMatches(step) {
 }
 
 function guideTaskDone() {
+  if (GUIDE.replay) return GUIDE.i >= GUIDE.task.guide.length;
   try { return !!GUIDE.task.ok(); } catch (e) { return false; }
 }
 
@@ -137,7 +139,9 @@ function guideTick() {
       setTimeout(() => { if (GUIDE && GUIDE.done) stopGuide(); }, 3500);
     }
     ring.hidden = true;
-    body.innerHTML = `${head}<div class="gd-say gd-ok">✔ ${en ? 'Done! The task is checked in the lessons panel.' : 'تمام! المهمة اتعلّم عليها ✔ في الدروس.'}</div>`;
+    body.innerHTML = `${head}<div class="gd-say gd-ok">✔ ${GUIDE.replay
+      ? (en ? 'That was every step of this task.' : 'كده خلصت كل خطوات المهمة دي.')
+      : (en ? 'Done! The task is checked in the lessons panel.' : 'تمام! المهمة اتعلّم عليها ✔ في الدروس.')}</div>`;
     placeBubble(bubble, null);
     return;
   }

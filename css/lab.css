@@ -898,6 +898,8 @@ table.files .btn { height: 24px; font-size: 12px; border-width: 1px; }
 .tk-hint { display: block; color: #8a6d00; background: #fff9e5; border-radius: 4px; padding: 2px 6px; margin-top: 4px; }
 .tk-guide { margin-top: 6px; border: 1px solid var(--blue-500); background: #fff; color: var(--blue-700); border-radius: 14px; padding: 2px 12px; font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; }
 .tk-guide:hover { background: var(--blue-600); color: #fff; }
+.tk-guide.again { border-color: #c9c9c9; color: #6e6e6e; font-weight: 600; }
+.tk-guide.again:hover { background: #6e6e6e; border-color: #6e6e6e; color: #fff; }
 .ls-ok { margin-top: 10px; background: #eaf7f1; border: 1px solid #bfe3d4; border-radius: 8px; padding: 8px 10px; }
 .qz { border: 1px solid var(--gray-300); border-radius: 8px; padding: 10px; margin-bottom: 10px; }
 .qz.right { border-color: #bfe3d4; }

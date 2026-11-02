@@ -162,7 +162,7 @@ function lessonReader(l) {
           <div class="tk-t">${tx(t.t)}</div>
           ${t.why ? `<details class="tk-why"><summary>${en ? 'Why?' : 'ليه؟'}</summary>${tx(t.why)}</details>` : ''}
           ${t.hint && !ok ? `<small class="tk-hint">💡 ${tx(t.hint)}</small>` : ''}
-          ${t.guide && t.guide.length && !ok ? `<button class="tk-guide" data-act="guideStart" data-l="${l.id}" data-i="${i}">👉 ${en ? 'Show me' : 'وريني'}</button>` : ''}
+          ${t.guide && t.guide.length ? `<button class="tk-guide ${ok ? 'again' : ''}" data-act="guideStart" data-l="${l.id}" data-i="${i}">👉 ${ok ? (en ? 'Show me again' : 'وريني تاني') : (en ? 'Show me' : 'وريني')}</button>` : ''}
         </div></li>`;
       }).join('')}</ol>
       ${p.done === p.total ? `<div class="ls-ok">🎉 ${en ? 'All tasks done! Now take the quiz.' : 'خلصت كل المهام! جرّب الاختبار دلوقتي.'} <a href="#" data-act="lessonTab" data-v="quiz">❓</a></div>` : ''}`;
